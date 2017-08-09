@@ -10,7 +10,7 @@ namespace UdpJson
     /// <summary>
     /// An execution context defines a set of valid methods for a listener.
     /// </summary>
-    class ExecutionContext
+    public class ExecutionContext
     {
         /// <summary>
         /// The executing method.

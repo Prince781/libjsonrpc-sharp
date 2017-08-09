@@ -53,7 +53,7 @@ namespace UdpJson
         /// <summary>
         /// The current execution context.
         /// </summary>
-        internal ExecutionContext Context {
+        public ExecutionContext Context {
             get { return m_contexts.Count > 0 ? m_contexts[m_contexts.Count - 1] : null; }
         }
 
@@ -364,12 +364,12 @@ namespace UdpJson
         }
 
         #region Contexts
-        void PushContext(ExecutionContext ctx)
+        public void PushContext(ExecutionContext ctx)
         {
             m_contexts.Add(ctx);
         }
 
-        void PopContext()
+        public void PopContext()
         {
             if (m_contexts.Count == 0)
                 throw new InvalidOperationException("'m_contexts' is empty");
