@@ -291,20 +291,35 @@ namespace UdpJson
                 return;
             }
 
-            // step 3: push a new context
-            bool pushedContext = false;
-            if (method.Methods != null)
+            // step 3: generate the params
+            object @params = request.Params;
+
+            try
             {
-                PushContext(new ExecutionContext(method, method.Methods));
-                pushedContext = true;
+                if (method.ParamsType != null)
+                    @params = request.ParamsAsObject(method.ParamsType);
+            } catch (Exception ex)
+            {
+                SendResponse(sender, new Response
+                {
+                    Id = request.Id,
+                    Error = new Error
+                    {
+                        Code = (int)ErrorCode.InternalError,
+                        Message = $"Internal error while converting params",
+                        Data = ex
+                    }
+                });
+
+                return;
             }
 
             try
             {
                 // step 4: invoke the method
-                object result = method.Invoke();
+                object result = method.Invoke(@params);
 
-                // step 5: send a response (if no exception was thrown)
+                // step 5a: send a response (if no exception was thrown)
                 SendResponse(sender, new Response
                 {
                     Id = request.Id,
@@ -312,7 +327,7 @@ namespace UdpJson
                 });
             } catch (Exception ex)
             {
-                // step 5: send an error response (otherwise)
+                // step 5b: send an error response (otherwise)
                 SendResponse(sender, new Response
                 {
                     Id = request.Id,
@@ -323,10 +338,16 @@ namespace UdpJson
                         Data = ex
                     }
                 });
+
+                // --v-v-v-- fall through --v-v-v--
             }
 
-            // step 6: pop the context (if there was any)
-            if (pushedContext)
+            // step 6: push the execution context (if there is one)
+            if (method.PushMethods != null)
+                PushContext(new ExecutionContext(method, method.PushMethods));
+
+            // step 7: pop execution context (if method defines that)
+            if (method.PopContext)
                 PopContext();
         }
 
