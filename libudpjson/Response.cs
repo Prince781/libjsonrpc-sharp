@@ -15,13 +15,11 @@ namespace UdpJson
         /// <summary>
         /// The value of this member is determined by the method invoked on the Server.
         /// </summary>
-        [JsonProperty(Required = Required.DisallowNull)]
         public object Result { get; set; }
 
         /// <summary>
         /// An error if it occurred.
         /// </summary>
-        [JsonProperty(Required = Required.DisallowNull)]
         public Error Error { get; set; }
 
         /// <summary>
