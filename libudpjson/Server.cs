@@ -323,7 +323,7 @@ namespace UdpJson
             try
             {
                 // step 4: invoke the method
-                object result = method.Invoke(Data);
+                object result = method.Invoke(this, Data);
 
                 // step 5a: send a response (if no exception was thrown)
                 SendResponse(sender, new Response

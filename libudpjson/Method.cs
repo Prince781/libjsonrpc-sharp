@@ -12,9 +12,10 @@ namespace UdpJson
         /// <summary>
         /// Invokes the method.
         /// </summary>
+        /// <param name="server">The server that invoked this method.</param>
         /// <param name="params">The object will be <see cref="Server.Data"/>.</param>
         /// <returns>A response object</returns>
-        public abstract object Invoke(object @params);
+        public abstract object Invoke(Server server, object @params);
 
         /// <summary>
         /// Gets state transition information. Return null for no transition.
