@@ -54,6 +54,7 @@
     <Compile Include="Response.cs" />
     <Compile Include="RpcObject.cs" />
     <Compile Include="Server.cs" />
+    <Compile Include="StateTransition.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

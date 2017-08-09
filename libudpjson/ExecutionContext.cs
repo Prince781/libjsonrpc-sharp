@@ -21,17 +21,17 @@ namespace UdpJson
         /// A storage of all available methods. The key is the command
         /// name, and the value is the method type.
         /// </summary>
-        public ReadOnlyDictionary<string, Method> availableMethods { get; }
+        public ReadOnlyDictionary<string, Type> availableMethods { get; }
 
         /// <summary>
         /// Creates a new command context.
         /// </summary>
         /// <param name="method">The executing method.</param>
         /// <param name="availableMethods">The types of available methods in this context.</param>
-        public ExecutionContext(Method method, IList<Tuple<string, Method>> availableMethods)
+        public ExecutionContext(Method method, IList<Tuple<string, Type>> availableMethods)
         {
             this.method = method;
-            this.availableMethods = new ReadOnlyDictionary<string, Method>(availableMethods.ToDictionary(x => x.Item1, x => x.Item2));
+            this.availableMethods = new ReadOnlyDictionary<string, Type>(availableMethods.ToDictionary(x => x.Item1, x => x.Item2));
         }
     }
 }

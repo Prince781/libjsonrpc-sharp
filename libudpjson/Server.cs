@@ -57,16 +57,22 @@ namespace UdpJson
             get { return m_contexts.Count > 0 ? m_contexts[m_contexts.Count - 1] : null; }
         }
 
-        public Server(int port, int timeout, IList<Tuple<string, Method>> methods = null)
+        /// <summary>
+        /// Data passed to any methods invoked.
+        /// </summary>
+        public object Data { get; set; }
+
+        public Server(int port, int timeout, IList<Tuple<string, Type>> methods = null, object data = null)
         {
             UdpPort = port;
             Timeout = timeout;
+            Data = data;
 
             m_contexts = new List<ExecutionContext>();
 
             if (methods != null)
             {
-                Tuple<string, Method> invalid;
+                Tuple<string, Type> invalid;
 
                 if ((invalid = methods.FirstOrDefault(tuple => tuple.Item1.StartsWith("rpc."))) != null)
                 {
@@ -257,11 +263,11 @@ namespace UdpJson
             }
 
             // step 2: look up the method
-            Method method = null;
+            Type methodType = null;
 
             try
             {
-                method = Context?.availableMethods[request.Method];
+                methodType = Context?.availableMethods[request.Method];
             } catch (KeyNotFoundException)
             {
                 SendResponse(sender, new Response
@@ -277,7 +283,7 @@ namespace UdpJson
                 return;
             }
 
-            if (method == null)
+            if (methodType == null)
             {
                 SendResponse(sender, new Response
                 {
@@ -293,12 +299,11 @@ namespace UdpJson
             }
 
             // step 3: generate the params
-            object @params = request.Params;
+            Method method;
 
             try
             {
-                if (method.ParamsType != null)
-                    @params = request.ParamsAsObject(method.ParamsType);
+                method = (Method) request.ParamsAsObject(methodType);
             } catch (Exception ex)
             {
                 SendResponse(sender, new Response
@@ -318,7 +323,7 @@ namespace UdpJson
             try
             {
                 // step 4: invoke the method
-                object result = method.Invoke(@params);
+                object result = method.Invoke(Data);
 
                 // step 5a: send a response (if no exception was thrown)
                 SendResponse(sender, new Response
@@ -340,15 +345,21 @@ namespace UdpJson
                     }
                 });
 
-                // --v-v-v-- fall through --v-v-v--
+                // don't transition if method call failed
+                return;
             }
 
-            // step 6: push the execution context (if there is one)
-            if (method.PushMethods != null)
-                PushContext(new ExecutionContext(method, method.PushMethods));
+            var trans = method.GetTransition();
 
-            // step 7: pop execution context (if method defines that)
-            if (method.PopContext)
+            if (trans == null)
+                return;
+
+            // step 6: push the execution context
+            if (trans.PushMethods != null)
+                PushContext(new ExecutionContext(method, trans.PushMethods));
+
+            // step 7: pop execution context
+            if (trans.PopContext)
                 PopContext();
         }
 
