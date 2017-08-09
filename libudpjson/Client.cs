@@ -126,8 +126,15 @@ namespace UdpJson
                 // step 3: add to list of responses
                 if (resp.Id == null)
                 {
-                    // there was an error
-                    GotErrorResponse?.Invoke(resp.Error);
+                    if (resp.Result == null)
+                    {
+                        // there was an error
+                        GotErrorResponse?.Invoke(resp.Error);
+                    } else
+                    {
+                        // We should not get a result without a response ID unless 
+                        // it is an error, according to JSON-RPC 2.0
+                    }
                 }
                 else
                 {
@@ -211,8 +218,8 @@ namespace UdpJson
         /// <summary>
         /// Calls a remote method asynchronously.
         /// </summary>
-        /// <param name="method">The name of the method</param>
-        /// <param name="params">The parameters passed to the method</param>
+        /// <param name="method">The name of the method.</param>
+        /// <param name="params">The parameters passed to the method.</param>
         /// <returns></returns>
         public Task<Response> CallAsync(string method, IDictionary<string, object> @params)
         {
@@ -240,6 +247,40 @@ namespace UdpJson
             var deserialized = JsonConvert.DeserializeObject<IDictionary<string, object>>(serialized);
 
             return CallAsync(method, deserialized);
+        }
+
+        /// <summary>
+        /// Sends a notification. The server will not respond to a notification unless there
+        /// is an error.
+        /// </summary>
+        /// <param name="method">The name of the method.</param>
+        /// <param name="params">The parameters passed to the method.</param>
+        /// <returns></returns>
+        public Task<int> NotifyAsync(string method, IDictionary<string, object> @params)
+        {
+            var request = new Request
+            {
+                Method = method,
+                Params = @params
+            };
+
+            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
+            return m_udp.SendAsync(data, data.Length);
+        }
+
+        /// <summary>
+        /// Sends a notification. The server will not respond to a notification unless there
+        /// is an error.
+        /// </summary>
+        /// <param name="method">The name of the method.</param>
+        /// <param name="params">The object to serialize to a dictionary. This cannot be a primitive type.</param>
+        /// <returns></returns>
+        public Task<int> NotifyAsync(string method, object @params)
+        {
+            string serialized = JsonConvert.SerializeObject(@params);
+            var deserialized = JsonConvert.DeserializeObject<IDictionary<string, object>>(serialized);
+
+            return NotifyAsync(method, deserialized);
         }
     }
 }
