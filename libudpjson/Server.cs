@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 
 namespace UdpJson
 {
+    // TODO: make this disposable
     /// <summary>
     /// Listens and responds to requests. 
     /// </summary>
