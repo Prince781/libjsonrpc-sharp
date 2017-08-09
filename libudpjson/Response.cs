@@ -27,7 +27,7 @@ namespace UdpJson
         /// <summary>
         /// If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be Null.
         /// </summary>
-        public int? Id { get; set; }
+        public ulong? Id { get; set; }
 
         public void CheckValidity()
         {

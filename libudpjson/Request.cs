@@ -28,13 +28,13 @@ namespace UdpJson
         /// A Structured value that holds the parameter values to be used during the invocation of the method.
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
-        public IReadOnlyDictionary<string, object> Params { get; set; }
+        public IDictionary<string, object> Params { get; set; }
 
         /// <summary>
         /// An identifier established by the Client.
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
-        public int? Id { get; set; }
+        public ulong? Id { get; set; }
 
         public object ParamsAsObject(Type type)
         {
