@@ -22,7 +22,7 @@ namespace UdpJson
         public IList<Tuple<string, Type>> PushMethods { get; set; }
 
         /// <summary>
-        /// If true, this will pop the current execution context after <see cref="Invoke(object)"/>
+        /// If true, this will pop the current execution context after <see cref="Method.Invoke(Server, object)"/>
         /// finishes.
         /// </summary>
         [JsonIgnore]

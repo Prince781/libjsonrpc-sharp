@@ -62,6 +62,13 @@ namespace UdpJson
         /// </summary>
         public object Data { get; set; }
 
+        /// <summary>
+        /// Creates a new server.
+        /// </summary>
+        /// <param name="port">The port to listen on for incoming requests.</param>
+        /// <param name="timeout">The timeout in milliseconds.</param>
+        /// <param name="methods">Each tuple is (methodName, <code>typeof(Method)</code>)</param>
+        /// <param name="data">This will be passed to <see cref="Method"/>s. See <see cref="Method.Invoke(Server, object)"/></param>
         public Server(int port, int timeout, IList<Tuple<string, Type>> methods = null, object data = null)
         {
             UdpPort = port;

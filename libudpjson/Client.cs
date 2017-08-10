@@ -186,7 +186,6 @@ namespace UdpJson
         /// <summary>
         /// Waits for a response to a method call. Times out after 20 seconds.
         /// </summary>
-        /// <param name="id">the unique ID of the command sent</param>
         /// <returns>null if there is a timeout</returns>
         private Response WaitForResponse(Request request)
         {
