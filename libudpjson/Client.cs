@@ -220,7 +220,7 @@ namespace UdpJson
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
         /// <returns></returns>
-        public Task<Response> CallAsync(string method, IDictionary<string, object> @params)
+        public Task<Response> CallAsync(string method, IDictionary<string, object> @params = null)
         {
             var request = new Request
             {
@@ -255,7 +255,7 @@ namespace UdpJson
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
         /// <returns></returns>
-        public Task<int> NotifyAsync(string method, IDictionary<string, object> @params)
+        public Task<int> NotifyAsync(string method, IDictionary<string, object> @params = null)
         {
             var request = new Request
             {
