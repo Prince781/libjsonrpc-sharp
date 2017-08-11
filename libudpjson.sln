@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.15
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "libudpjson", "libudpjson\libudpjson.csproj", "{9BC040F5-2991-4389-8EAE-D84C535141AC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "libudpjson", "libudpjson.csproj", "{89D6FBCF-433E-4922-A1B8-0EF37868EBEC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +11,10 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{9BC040F5-2991-4389-8EAE-D84C535141AC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9BC040F5-2991-4389-8EAE-D84C535141AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9BC040F5-2991-4389-8EAE-D84C535141AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9BC040F5-2991-4389-8EAE-D84C535141AC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{89D6FBCF-433E-4922-A1B8-0EF37868EBEC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{89D6FBCF-433E-4922-A1B8-0EF37868EBEC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{89D6FBCF-433E-4922-A1B8-0EF37868EBEC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{89D6FBCF-433E-4922-A1B8-0EF37868EBEC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
