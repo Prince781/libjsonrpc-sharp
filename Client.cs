@@ -178,7 +178,7 @@ namespace UdpJson
                 }
                 else
                 {
-                    Trace.WriteLine($"Encountered exception while attempting to receive data: {ex}");
+                    Debug.WriteLine($"Encountered exception while attempting to receive data: {ex}");
                 }
             }
 
@@ -195,7 +195,7 @@ namespace UdpJson
                 resp = JsonConvert.DeserializeObject<Response>(text);
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
+                Debug.WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
             }
 
             return resp;
@@ -216,7 +216,7 @@ namespace UdpJson
             {
                 if ((DateTime.Now - startTime) >= maxdiff)
                 {
-                    Trace.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
+                    Debug.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
                     return null;
                 }
 

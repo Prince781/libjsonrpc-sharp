@@ -161,7 +161,7 @@ namespace UdpJson
                 }
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
+                Debug.WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
             }
         }
 
@@ -179,7 +179,7 @@ namespace UdpJson
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
                 {
-                    Trace.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
+                    Debug.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
                 } else if (ex.SocketErrorCode == SocketError.ConnectionReset)
                 {
                     // Windows sends a "Connection Reset" message if we try to receive
@@ -188,19 +188,19 @@ namespace UdpJson
                     // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
                     if (m_lastResponseEP != null)
                     {
-                        Trace.WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
+                        Debug.WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
                     } else
                     {
                         // otherwise, we silently ignore this error
                     }
                 } else
                 {
-                    Trace.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
+                    Debug.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
                 }
                 return null;
             }
 
-            Trace.WriteLine($"Received command packet from {m_endPoint}");
+            Debug.WriteLine($"Received command packet from {m_endPoint}");
 
             return buffer;
         }
@@ -215,7 +215,7 @@ namespace UdpJson
                 request = JsonConvert.DeserializeObject<Request>(packetStr);
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Failed to deserialize request object: {ex}");
+                Debug.WriteLine($"Failed to deserialize request object: {ex}");
 
                 if (ex is JsonReaderException)
                 {
@@ -263,7 +263,7 @@ namespace UdpJson
                 request.CheckValidity();
             } catch (RpcException ex)
             {
-                Trace.WriteLine($"Invalid request: {ex}");
+                Debug.WriteLine($"Invalid request: {ex}");
 
                 await SendResponse(sender, new Response
                 {
@@ -404,7 +404,7 @@ namespace UdpJson
 
             m_lastResponseEP = toEndpoint;
             await m_udp.SendAsync(data, data.Length, toEndpoint);
-            Trace.WriteLine($"Sending response to {toEndpoint}");
+            Debug.WriteLine($"Sending response to {toEndpoint}");
         }
     }
 }
