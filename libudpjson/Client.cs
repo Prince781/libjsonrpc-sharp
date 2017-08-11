@@ -63,9 +63,9 @@ namespace UdpJson
         /// <param name="remote">The remote server to send commands to.</param>
         /// <param name="port">The port to send commands from.</param>
         /// <param name="timeout">The timeout in milliseconds.</param>
-        public Client(IPEndPoint remote, int port, int timeout)
+        public Client(Uri remote, int port, int timeout)
         {
-            m_remoteEP = remote;
+            m_remoteEP = new IPEndPoint(IPAddress.Parse(remote.Host), remote.Port);
             Port = port;
             Timeout = timeout;
 
@@ -132,7 +132,7 @@ namespace UdpJson
                         GotErrorResponse?.Invoke(resp.Error);
                     } else
                     {
-                        // We should not get a result without a response ID unless 
+                        // We should not get a response result without a response ID unless 
                         // it is an error, according to JSON-RPC 2.0
                     }
                 }
