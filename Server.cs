@@ -298,7 +298,12 @@ namespace UdpJson
                 request.CheckValidity();
             } catch (RpcException ex)
             {
-                Debug.WriteLine($"Invalid request: {ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Invalid request: {ex}");
 
                 await SendResponse(sender, new Response
                 {
