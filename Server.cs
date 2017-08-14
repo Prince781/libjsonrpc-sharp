@@ -28,6 +28,9 @@ namespace UdpJson
         /// </summary>
         public int UdpPort { get; }
 
+        /// <summary>
+        /// Number of packets received.
+        /// </summary>
         public long PacketsReceived { get; private set; }
 
         /// <summary>
@@ -380,11 +383,21 @@ namespace UdpJson
         }
 
         #region Contexts
+        /// <summary>
+        /// Adds a new execution context on top of the stack of execution contexts.
+        /// This should only be used by classes extending <see cref="Method"/>.
+        /// </summary>
+        /// <param name="ctx"></param>
         public void PushContext(ExecutionContext ctx)
         {
             m_contexts.Add(ctx);
         }
 
+        /// <summary>
+        /// Pops the top-most execution context on top of the stack of execution contexts.
+        /// This should only be used by classes extending <see cref="Method"/>. Will 
+        /// throw an exception if the stack is empty.
+        /// </summary>
         public void PopContext()
         {
             if (m_contexts.Count == 0)
