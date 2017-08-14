@@ -12,6 +12,11 @@ using Newtonsoft.Json;
 
 namespace UdpJson
 {
+    /// <summary>
+    /// Invoked when an <see cref="Error"/> is received back
+    /// from the server.
+    /// </summary>
+    /// <param name="error">The error.</param>
     public delegate void ErrorHandler(Error error);
 
     // TODO: make this disposable
@@ -178,7 +183,12 @@ namespace UdpJson
                 }
                 else
                 {
-                    Debug.WriteLine($"Encountered exception while attempting to receive data: {ex}");
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Encountered exception while attempting to receive data: {ex}");
                 }
             }
 
@@ -195,7 +205,12 @@ namespace UdpJson
                 resp = JsonConvert.DeserializeObject<Response>(text);
             } catch (Exception ex)
             {
-                Debug.WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
             }
 
             return resp;
@@ -216,7 +231,12 @@ namespace UdpJson
             {
                 if ((DateTime.Now - startTime) >= maxdiff)
                 {
-                    Debug.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
                     return null;
                 }
 

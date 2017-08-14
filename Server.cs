@@ -164,7 +164,12 @@ namespace UdpJson
                 }
             } catch (Exception ex)
             {
-                Debug.WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
             }
         }
 
@@ -182,8 +187,14 @@ namespace UdpJson
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
                 {
-                    Debug.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
-                } else if (ex.SocketErrorCode == SocketError.ConnectionReset)
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
+                }
+                else if (ex.SocketErrorCode == SocketError.ConnectionReset)
                 {
                     // Windows sends a "Connection Reset" message if we try to receive
                     // packets, and the last packet we sent was not received by the remote.
@@ -191,19 +202,35 @@ namespace UdpJson
                     // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
                     if (m_lastResponseEP != null)
                     {
-                        Debug.WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
-                    } else
+#if !NETSTANDARD2_0
+                        Debug
+#else
+                        Trace
+#endif
+                        .WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
+                    }
+                    else
                     {
                         // otherwise, we silently ignore this error
                     }
                 } else
                 {
-                    Debug.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
                 }
                 return null;
             }
 
-            Debug.WriteLine($"Received command packet from {m_endPoint}");
+#if !NETSTANDARD2_0
+            Debug
+#else
+            Trace
+#endif
+            .WriteLine($"Received command packet from {m_endPoint}");
 
             return buffer;
         }
@@ -218,7 +245,12 @@ namespace UdpJson
                 request = JsonConvert.DeserializeObject<Request>(packetStr);
             } catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to deserialize request object: {ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Failed to deserialize request object: {ex}");
 
                 if (ex is JsonReaderException)
                 {
@@ -417,7 +449,12 @@ namespace UdpJson
 
             m_lastResponseEP = toEndpoint;
             await m_udp.SendAsync(data, data.Length, toEndpoint);
-            Debug.WriteLine($"Sending response to {toEndpoint}");
+#if !NETSTANDARD2_0
+            Debug
+#else
+            Trace
+#endif
+            .WriteLine($"Sending response to {toEndpoint}");
         }
     }
 }

@@ -2,6 +2,16 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard1.4</TargetFramework>
+    <Company />
+    <Authors>Princeton Ferro</Authors>
+    <Description>C# library for JSON RPC over UDP. Based on JSON-RPC 2.0</Description>
+    <PackageTags>json, rpc</PackageTags>
+    <RepositoryUrl>https://gitlab.brightlogic.com/pferro/libudpjson</RepositoryUrl>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DocumentationFile>bin\Debug\netstandard1.4\libudpjson.xml</DocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

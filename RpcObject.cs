@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 
 namespace UdpJson
 {
+    /// <summary>
+    /// Base for any object sent over JSON-RPC.
+    /// </summary>
     public interface RpcObject
     {
         /// <summary>

@@ -7,7 +7,9 @@ using System.Threading.Tasks;
 
 namespace UdpJson
 {
-
+    /// <summary>
+    /// An error code for <see cref="Error"/>s.
+    /// </summary>
     public enum ErrorCode
     {
         /// <summary>
@@ -44,7 +46,14 @@ namespace UdpJson
     /// </summary>
     public class Error : RpcObject
     {
+        /// <summary>
+        /// Defined by JSON-RPC 2.0.
+        /// </summary>
         public static int ServerErrorMin = -32000;
+
+        /// <summary>
+        /// Defined by JSON-RPC 2.0.
+        /// </summary>
         public static int ServerErrorMax = -32099;
 
         /// <summary>
@@ -59,9 +68,15 @@ namespace UdpJson
         [JsonProperty(Required = Required.Always)]
         public string Message { get; set; }
 
+        /// <summary>
+        /// Any extra data sent with the error.
+        /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public object Data { get; set; }
 
+        /// <summary>
+        /// Checks if this error conforms with the JSON-RPC 2.0 spec.
+        /// </summary>
         public void CheckValidity()
         {
             if (!(Code >= ServerErrorMin && Code <= ServerErrorMax) || Enum.IsDefined(typeof(ErrorCode), Code))

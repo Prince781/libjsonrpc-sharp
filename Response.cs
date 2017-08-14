@@ -7,8 +7,14 @@ using System.Threading.Tasks;
 
 namespace UdpJson
 {
+    /// <summary>
+    /// A response is sent from Server to Client after a request is made.
+    /// </summary>
     public class Response : RpcObject
     {
+        /// <summary>
+        /// The version of JSON-RPC this object supports.
+        /// </summary>
         [JsonRequired]
         public string Jsonrpc { get; set; } = "2.0";
 
@@ -23,10 +29,15 @@ namespace UdpJson
         public Error Error { get; set; }
 
         /// <summary>
-        /// If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be Null.
+        /// If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be <code>null</code>.
+        /// Otherwise this will match the ID of the request object.
         /// </summary>
         public ulong? Id { get; set; }
 
+        /// <summary>
+        /// Check whether this response conforms to the JSON-RPC 2.0 spec.
+        /// </summary>
+        /// <exception cref="RpcException">If this object is invalid.</exception>
         public void CheckValidity()
         {
             if (Jsonrpc != "2.0")
