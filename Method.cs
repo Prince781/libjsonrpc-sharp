@@ -20,7 +20,7 @@ namespace UdpJson
         /// <summary>
         /// Gets state transition information. Return null for no transition.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A new state to transition to or <code>null</code>.</returns>
         public virtual StateTransition GetTransition()
         {
             return null;

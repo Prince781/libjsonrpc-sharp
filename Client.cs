@@ -12,6 +12,11 @@ using Newtonsoft.Json;
 
 namespace UdpJson
 {
+    /// <summary>
+    /// Invoked when an <see cref="Error"/> is received back
+    /// from the server.
+    /// </summary>
+    /// <param name="error">The error.</param>
     public delegate void ErrorHandler(Error error);
 
     // TODO: make this disposable
@@ -33,8 +38,9 @@ namespace UdpJson
         private ulong NextUID { get { return ++uid; } }
 
         private ConcurrentDictionary<ulong, Response> m_responses;
-        private bool m_pleaseShutdown;
-        private Thread m_backgroundThread;
+        private Task m_backgroundTask;
+        private CancellationTokenSource m_cancelTokenSource;
+        private CancellationToken m_cancelToken;
 
         /// <summary>
         /// The port where this client is listening for responses.
@@ -63,9 +69,9 @@ namespace UdpJson
         /// <param name="remote">The remote server to send commands to.</param>
         /// <param name="port">The port to send commands from.</param>
         /// <param name="timeout">The timeout in milliseconds.</param>
-        public Client(IPEndPoint remote, int port, int timeout)
+        public Client(Uri remote, int port, int timeout)
         {
-            m_remoteEP = remote;
+            m_remoteEP = new IPEndPoint(IPAddress.Parse(remote.Host), remote.Port);
             Port = port;
             Timeout = timeout;
 
@@ -75,48 +81,63 @@ namespace UdpJson
                 SocketOptionLevel.Socket, SocketOptionName.ReceiveTimeout, Timeout);
         }
 
+        /// <summary>
+        /// Starts the background task where the client will process further responses.
+        /// </summary>
         public void Start()
         {
-            m_pleaseShutdown = false;
+            if (IsProcessing)
+                throw new Exception($"Task {m_backgroundTask.Id} was already started and is currently processing.");
+
+            m_cancelTokenSource = new CancellationTokenSource();
+            m_cancelToken = m_cancelTokenSource.Token;
 
             m_responses = new ConcurrentDictionary<ulong, Response>();
+            m_remoteEP = new IPEndPoint(IPAddress.Any, 0);          
 
-            m_remoteEP = new IPEndPoint(IPAddress.Any, 0);
-            m_backgroundThread = new Thread(Run);
-            m_backgroundThread.IsBackground = true;
-            m_backgroundThread.Name = "UdpJsonClient";
+            // see https://stackoverflow.com/questions/20261300/what-is-correct-way-to-combine-long-running-tasks-with-async-await-pattern
+            Task<Task> task = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-            m_backgroundThread.Start();
+            m_backgroundTask = task.Unwrap();
         }
 
+        /// <summary>
+        /// Stops the Client from processing responses.
+        /// </summary>
         public void Stop()
         {
-            m_pleaseShutdown = true;
+            if (m_cancelTokenSource == null)
+                throw new Exception($"{nameof(m_cancelTokenSource)} is null.");
 
-            if (m_backgroundThread != null)
-            {
-                m_backgroundThread.Join();
+            if (m_cancelToken.IsCancellationRequested)
+                return;
 
-                m_udp?.Close();
-                m_udp = null;
+            m_cancelTokenSource.Cancel();
+            m_backgroundTask.Wait();
 
-                m_backgroundThread = null;
+            m_udp?.Dispose();
+            m_udp = null;
 
-                IsProcessing = false;
-            }
+            m_remoteEP = null;
+
+            m_backgroundTask = null;
+            m_cancelToken = default(CancellationToken);
+            m_cancelTokenSource = null;
+
+            IsProcessing = false;
         }
 
-        private void Run()
+        private async Task Run()
         {
             IsProcessing = true;
 
-            while (!m_pleaseShutdown)
+            while (!m_cancelToken.IsCancellationRequested)
             {
                 byte[] data;
                 Response resp;
 
                 // step 1: wait synchronously for a response
-                if ((data = GetPacket()) == null)
+                if ((data = await GetPacket()) == null)
                     continue;
 
                 // step 2: parse response
@@ -132,7 +153,7 @@ namespace UdpJson
                         GotErrorResponse?.Invoke(resp.Error);
                     } else
                     {
-                        // We should not get a result without a response ID unless 
+                        // We should not get a response result without a response ID unless 
                         // it is an error, according to JSON-RPC 2.0
                     }
                 }
@@ -145,13 +166,15 @@ namespace UdpJson
             IsProcessing = false;
         }
 
-        private byte[] GetPacket()
+        private async Task<byte[]> GetPacket()
         {
             byte[] data = null;
 
             try
             {
-                data = m_udp.Receive(ref m_remoteEP);
+                var result = await m_udp.ReceiveAsync();
+                data = result.Buffer;
+                m_remoteEP = result.RemoteEndPoint;
             } catch (SocketException ex)
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
@@ -160,7 +183,12 @@ namespace UdpJson
                 }
                 else
                 {
-                    Trace.WriteLine($"Encountered exception while attempting to receive data: {ex}");
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Encountered exception while attempting to receive data: {ex}");
                 }
             }
 
@@ -177,7 +205,12 @@ namespace UdpJson
                 resp = JsonConvert.DeserializeObject<Response>(text);
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
             }
 
             return resp;
@@ -187,7 +220,7 @@ namespace UdpJson
         /// Waits for a response to a method call. Times out after 20 seconds.
         /// </summary>
         /// <returns>null if there is a timeout</returns>
-        private Response WaitForResponse(Request request)
+        private async Task<Response> WaitForResponse(Request request)
         {
             TimeSpan maxdiff = TimeSpan.FromSeconds(20);
             DateTime startTime = DateTime.Now;
@@ -198,13 +231,18 @@ namespace UdpJson
             {
                 if ((DateTime.Now - startTime) >= maxdiff)
                 {
-                    Trace.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
                     return null;
                 }
 
                 // loop until we get something
                 // wait for response listener background thread to get something
-                Thread.Sleep(200);
+                await Task.Delay(200);
             }
 
             // we've gotten a response
@@ -220,7 +258,7 @@ namespace UdpJson
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
         /// <returns></returns>
-        public Task<Response> CallAsync(string method, IDictionary<string, object> @params = null)
+        public async Task<Response> CallAsync(string method, IDictionary<string, object> @params = null)
         {
             var request = new Request
             {
@@ -231,7 +269,8 @@ namespace UdpJson
 
             byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
 
-            return m_udp.SendAsync(data, data.Length).ContinueWith(task => WaitForResponse(request));
+            await m_udp.SendAsync(data, data.Length, m_remoteEP);
+            return await WaitForResponse(request);
         }
 
         /// <summary>
@@ -264,7 +303,7 @@ namespace UdpJson
             };
 
             byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
-            return m_udp.SendAsync(data, data.Length);
+            return m_udp.SendAsync(data, data.Length, m_remoteEP);
         }
 
         /// <summary>

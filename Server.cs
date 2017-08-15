@@ -28,6 +28,9 @@ namespace UdpJson
         /// </summary>
         public int UdpPort { get; }
 
+        /// <summary>
+        /// Number of packets received.
+        /// </summary>
         public long PacketsReceived { get; private set; }
 
         /// <summary>
@@ -40,10 +43,11 @@ namespace UdpJson
         /// </summary>
         public bool IsProcessing { get; private set; }
 
-        private bool m_stopRunning;
+        private CancellationTokenSource m_cancelTokenSource;
+        private CancellationToken m_cancelToken;
         private DateTime m_startProcessingTime;
 
-        private Thread m_runThread;
+        private Task m_backgroundTask;
 
         /// <summary>
         /// List of execution contexts. The first item is the first execution context.
@@ -77,7 +81,7 @@ namespace UdpJson
 
             m_contexts = new List<ExecutionContext>();
 
-            if (methods != null)
+            if (methods != null && methods.Count > 0)
             {
                 Tuple<string, Type> invalid;
 
@@ -93,11 +97,15 @@ namespace UdpJson
         }
 
         /// <summary>
-        /// Starts the server. This is not thread-safe.
+        /// Starts the server.
         /// </summary>
         public void Start()
         {
-            m_stopRunning = false;
+            if (IsProcessing)
+                throw new Exception($"Task {m_backgroundTask.Id} was already started and is currently processing.");
+
+            m_cancelTokenSource = new CancellationTokenSource();
+            m_cancelToken = m_cancelTokenSource.Token;
 
             m_udp = new UdpClient(UdpPort);
             m_udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveTimeout, Timeout);
@@ -106,72 +114,87 @@ namespace UdpJson
             m_startProcessingTime = DateTime.Now;
             PacketsReceived = 0;
 
-            m_runThread = new Thread(Run);
-            m_runThread.IsBackground = true;
-            m_runThread.Name = "UdpJsonServer";
-            m_runThread.Priority = ThreadPriority.Highest;
-            m_runThread.Start();
+            Task<Task> task = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+            m_backgroundTask = task.Unwrap();
         }
 
         /// <summary>
-        /// Stops the server. This is not thread-safe.
+        /// Stops the server.
         /// </summary>
         public void Stop()
         {
-            m_stopRunning = true;
+            if (m_cancelTokenSource == null)
+                throw new Exception($"{nameof(m_cancelTokenSource)} is null.");
 
-            if (m_runThread != null)
-            {
-                m_runThread.Join();
+            if (m_cancelToken.IsCancellationRequested)
+                return;
 
-                m_udp?.Close();
-                m_udp = null;
+            m_cancelTokenSource.Cancel();
+            m_backgroundTask.Wait();
 
-                m_endPoint = null;
-                m_lastResponseEP = null;
+            m_udp?.Dispose();
+            m_udp = null;
 
-                m_runThread = null;
+            m_endPoint = null;
+            m_lastResponseEP = null;
 
-                IsProcessing = false;
-            }
+            m_backgroundTask = null;
+            m_cancelToken = default(CancellationToken);
+            m_cancelTokenSource = null;
         }
 
-        private void Run()
+        private async Task Run()
         {
             byte[] packet;
 
+            IsProcessing = true;
+
             try
             {
-                while (!m_stopRunning)
+                while (!m_cancelToken.IsCancellationRequested)
                 {
-                    IsProcessing = true;
-
-                    if ((packet = GetPacket()) == null)
+                    if ((packet = await GetPacket()) == null)
                         continue;
 
                     // process packet as request
-                    ProcessRequest(packet, m_endPoint);
+                    await ProcessRequest(packet, m_endPoint);
                 }
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Received exception in {Thread.CurrentThread.Name} thread -> {ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
             }
+
+            IsProcessing = false;
         }
 
-        private byte[] GetPacket()
+        private async Task<byte[]> GetPacket()
         {
             byte[] buffer;
 
             try
             {
-                buffer = m_udp.Receive(ref m_endPoint);
+                var result = await m_udp.ReceiveAsync();
+                buffer = result.Buffer;
+                m_endPoint = result.RemoteEndPoint;
                 PacketsReceived++;
             } catch (SocketException ex)
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
                 {
-                    Trace.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
-                } else if (ex.SocketErrorCode == SocketError.ConnectionReset)
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
+                }
+                else if (ex.SocketErrorCode == SocketError.ConnectionReset)
                 {
                     // Windows sends a "Connection Reset" message if we try to receive
                     // packets, and the last packet we sent was not received by the remote.
@@ -179,24 +202,40 @@ namespace UdpJson
                     // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
                     if (m_lastResponseEP != null)
                     {
-                        Trace.WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
-                    } else
+#if !NETSTANDARD2_0
+                        Debug
+#else
+                        Trace
+#endif
+                        .WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
+                    }
+                    else
                     {
                         // otherwise, we silently ignore this error
                     }
                 } else
                 {
-                    Trace.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
+#if !NETSTANDARD2_0
+                    Debug
+#else
+                    Trace
+#endif
+                    .WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
                 }
                 return null;
             }
 
-            Trace.WriteLine($"Received command packet from {m_endPoint}");
+#if !NETSTANDARD2_0
+            Debug
+#else
+            Trace
+#endif
+            .WriteLine($"Received command packet from {m_endPoint}");
 
             return buffer;
         }
 
-        private void ProcessRequest(byte[] packet, IPEndPoint sender)
+        private async Task ProcessRequest(byte[] packet, IPEndPoint sender)
         {
             string packetStr = Encoding.UTF8.GetString(packet);
             Request request;
@@ -206,11 +245,16 @@ namespace UdpJson
                 request = JsonConvert.DeserializeObject<Request>(packetStr);
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Failed to deserialize request object: {ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Failed to deserialize request object: {ex}");
 
                 if (ex is JsonReaderException)
                 {
-                    SendResponse(sender, new Response
+                    await SendResponse(sender, new Response
                     {
                         Error = new Error
                         {
@@ -221,7 +265,7 @@ namespace UdpJson
                     });
                 } else if (ex is JsonSerializationException)
                 {
-                    SendResponse(sender, new Response
+                    await SendResponse(sender, new Response
                     {
                         Error = new Error
                         {
@@ -232,7 +276,7 @@ namespace UdpJson
                     });
                 } else
                 {
-                    SendResponse(sender, new Response
+                    await SendResponse(sender, new Response
                     {
                         Error = new Error
                         {
@@ -254,9 +298,14 @@ namespace UdpJson
                 request.CheckValidity();
             } catch (RpcException ex)
             {
-                Trace.WriteLine($"Invalid request: {ex}");
+#if !NETSTANDARD2_0
+                Debug
+#else
+                Trace
+#endif
+                .WriteLine($"Invalid request: {ex}");
 
-                SendResponse(sender, new Response
+                await SendResponse(sender, new Response
                 {
                     Error = new Error
                     {
@@ -277,7 +326,7 @@ namespace UdpJson
                 methodType = Context?.availableMethods[request.Method];
             } catch (KeyNotFoundException)
             {
-                SendResponse(sender, new Response
+                await SendResponse(sender, new Response
                 {
                     Id = request.Id,
                     Error = new Error
@@ -292,7 +341,7 @@ namespace UdpJson
 
             if (methodType == null)
             {
-                SendResponse(sender, new Response
+                await SendResponse(sender, new Response
                 {
                     Id = request.Id,
                     Error = new Error
@@ -313,7 +362,7 @@ namespace UdpJson
                 method = (Method) request.ParamsAsObject(methodType);
             } catch (Exception ex)
             {
-                SendResponse(sender, new Response
+                await SendResponse(sender, new Response
                 {
                     Id = request.Id,
                     Error = new Error
@@ -333,7 +382,7 @@ namespace UdpJson
                 object result = method.Invoke(this, Data);
 
                 // step 5a: send a response (if no exception was thrown)
-                SendResponse(sender, new Response
+                await SendResponse(sender, new Response
                 {
                     Id = request.Id,
                     Result = result
@@ -341,7 +390,7 @@ namespace UdpJson
             } catch (Exception ex)
             {
                 // step 5b: send an error response (otherwise)
-                SendResponse(sender, new Response
+                await SendResponse(sender, new Response
                 {
                     Id = request.Id,
                     Error = new Error
@@ -371,21 +420,31 @@ namespace UdpJson
         }
 
         #region Contexts
+        /// <summary>
+        /// Adds a new execution context on top of the stack of execution contexts.
+        /// This should only be used by classes extending <see cref="Method"/>.
+        /// </summary>
+        /// <param name="ctx"></param>
         public void PushContext(ExecutionContext ctx)
         {
             m_contexts.Add(ctx);
         }
 
+        /// <summary>
+        /// Pops the top-most execution context on top of the stack of execution contexts.
+        /// This should only be used by classes extending <see cref="Method"/>. Will 
+        /// throw an exception if the stack is empty.
+        /// </summary>
         public void PopContext()
         {
             if (m_contexts.Count == 0)
-                throw new InvalidOperationException("'m_contexts' is empty");
+                throw new InvalidOperationException($"'{nameof(m_contexts)}' is empty");
 
             m_contexts.RemoveAt(m_contexts.Count - 1);
         }
         #endregion
 
-        void SendResponse(IPEndPoint toEndpoint, Response response)
+        async Task SendResponse(IPEndPoint toEndpoint, Response response)
         {
             // see https://stackoverflow.com/questions/34070459/newtonsoft-jsonserializer-lower-case-properties-and-dictionary
             byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response, new JsonSerializerSettings
@@ -394,8 +453,13 @@ namespace UdpJson
             }));
 
             m_lastResponseEP = toEndpoint;
-            m_udp.SendAsync(data, data.Length, toEndpoint);
-            Trace.WriteLine($"Sending response to {toEndpoint}");
+            await m_udp.SendAsync(data, data.Length, toEndpoint);
+#if !NETSTANDARD2_0
+            Debug
+#else
+            Trace
+#endif
+            .WriteLine($"Sending response to {toEndpoint}");
         }
     }
 }
