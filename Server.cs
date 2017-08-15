@@ -102,7 +102,7 @@ namespace UdpJson
         public void Start()
         {
             if (IsProcessing)
-                throw new Exception($"Task {m_backgroundTask.Id} was already started.");
+                throw new Exception($"Task {m_backgroundTask.Id} was already started and is currently processing.");
 
             m_cancelTokenSource = new CancellationTokenSource();
             m_cancelToken = m_cancelTokenSource.Token;
@@ -142,20 +142,18 @@ namespace UdpJson
             m_backgroundTask = null;
             m_cancelToken = default(CancellationToken);
             m_cancelTokenSource = null;
-
-            IsProcessing = false;
         }
 
         private async Task Run()
         {
             byte[] packet;
 
+            IsProcessing = true;
+
             try
             {
                 while (!m_cancelToken.IsCancellationRequested)
                 {
-                    IsProcessing = true;
-
                     if ((packet = await GetPacket()) == null)
                         continue;
 
@@ -171,6 +169,8 @@ namespace UdpJson
 #endif
                 .WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
             }
+
+            IsProcessing = false;
         }
 
         private async Task<byte[]> GetPacket()

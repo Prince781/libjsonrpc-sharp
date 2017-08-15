@@ -87,7 +87,7 @@ namespace UdpJson
         public void Start()
         {
             if (IsProcessing)
-                throw new Exception($"Task {m_backgroundTask.Id} was already started.");
+                throw new Exception($"Task {m_backgroundTask.Id} was already started and is currently processing.");
 
             m_cancelTokenSource = new CancellationTokenSource();
             m_cancelToken = m_cancelTokenSource.Token;
