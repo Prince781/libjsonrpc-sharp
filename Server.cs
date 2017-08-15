@@ -438,7 +438,7 @@ namespace UdpJson
         public void PopContext()
         {
             if (m_contexts.Count == 0)
-                throw new InvalidOperationException("'m_contexts' is empty");
+                throw new InvalidOperationException($"'{nameof(m_contexts)}' is empty");
 
             m_contexts.RemoveAt(m_contexts.Count - 1);
         }
