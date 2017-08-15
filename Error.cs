@@ -80,7 +80,8 @@ namespace UdpJson
         public void CheckValidity()
         {
             if (!(Code >= ServerErrorMin && Code <= ServerErrorMax) || Enum.IsDefined(typeof(ErrorCode), Code))
-                throw new RpcException($"Invalid error code '{Code}'. Codes must be between {ServerErrorMin} and {ServerErrorMax} or one of {Enum.GetValues(typeof(ErrorCode))}");
+                throw new RpcException($"Invalid error code '{Code}'. Codes must be between" +
+                    $" {ServerErrorMin} and {ServerErrorMax} or one of {Enum.GetValues(typeof(ErrorCode))}");
         }
     }
 }
