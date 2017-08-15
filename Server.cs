@@ -67,6 +67,11 @@ namespace UdpJson
         public object Data { get; set; }
 
         /// <summary>
+        /// Invoked whenever there is an error that is sent to the client.
+        /// </summary>
+        public event ErrorHandler OnError;
+
+        /// <summary>
         /// Creates a new server.
         /// </summary>
         /// <param name="port">The port to listen on for incoming requests.</param>
@@ -224,37 +229,40 @@ namespace UdpJson
 
                 if (ex is JsonReaderException)
                 {
-                    await SendResponse(sender, new Response
+                    var error = new Error
                     {
-                        Error = new Error
-                        {
-                            Code = (int)ErrorCode.ParseError,
-                            Message = "Parse error",
-                            Data = ex
-                        }
-                    });
+                        Code = (int)ErrorCode.ParseError,
+                        Message = "Parse error",
+                        Data = ex
+                    };
+
+                    await SendResponse(sender, new Response { Error = error });
+
+                    OnError?.Invoke(error);
                 } else if (ex is JsonSerializationException)
                 {
-                    await SendResponse(sender, new Response
+                    var error = new Error
                     {
-                        Error = new Error
-                        {
-                            Code = (int)ErrorCode.InvalidRequest,
-                            Message = "Invalid request",
-                            Data = ex
-                        }
-                    });
+                        Code = (int)ErrorCode.InvalidRequest,
+                        Message = "Invalid request",
+                        Data = ex
+                    };
+
+                    await SendResponse(sender, new Response { Error = error });
+
+                    OnError?.Invoke(error);
                 } else
                 {
-                    await SendResponse(sender, new Response
+                    var error = new Error
                     {
-                        Error = new Error
-                        {
-                            Code = (int)ErrorCode.InternalError,
-                            Message = "Some other error occurred",
-                            Data = ex
-                        }
-                    });
+                        Code = (int)ErrorCode.InternalError,
+                        Message = "Some other error occurred",
+                        Data = ex
+                    };
+
+                    await SendResponse(sender, new Response { Error = error });
+
+                    OnError?.Invoke(error);
                 }
 
                 return;
@@ -270,15 +278,16 @@ namespace UdpJson
             {
                 Trace.WriteLine($"Invalid request: {ex}");
 
-                await SendResponse(sender, new Response
+                var error = new Error
                 {
-                    Error = new Error
-                    {
-                        Code = (int) ErrorCode.InvalidRequest,
-                        Message = "Invalid request",
-                        Data = ex
-                    }
-                });
+                    Code = (int)ErrorCode.InvalidRequest,
+                    Message = "Invalid request",
+                    Data = ex
+                };
+
+                await SendResponse(sender, new Response { Error = error });
+
+                OnError?.Invoke(error);
 
                 return;
             }
@@ -291,31 +300,39 @@ namespace UdpJson
                 methodType = Context?.availableMethods[request.Method];
             } catch (KeyNotFoundException)
             {
+                var error = new Error
+                {
+                    Code = (int)ErrorCode.MethodNotFound,
+                    Message = "Method not found",
+                    Data = request.Method
+                };
+
                 await SendResponse(sender, new Response
                 {
                     Id = request.Id,
-                    Error = new Error
-                    {
-                        Code = (int)ErrorCode.MethodNotFound,
-                        Message = "Method not found",
-                        Data = request.Method
-                    }
+                    Error = error
                 });
+
+                OnError?.Invoke(error);
                 return;
             }
 
             if (methodType == null)
             {
+                var error = new Error
+                {
+                    Code = (int)ErrorCode.MethodNotFound,
+                    Message = "Method not found",
+                    Data = request.Method
+                };
+
                 await SendResponse(sender, new Response
                 {
                     Id = request.Id,
-                    Error = new Error
-                    {
-                        Code = (int)ErrorCode.MethodNotFound,
-                        Message = "Method not found",
-                        Data = request.Method
-                    }
+                    Error = error
                 });
+
+                OnError?.Invoke(error);
                 return;
             }
 
@@ -327,17 +344,20 @@ namespace UdpJson
                 method = (Method) request.ParamsAsObject(methodType);
             } catch (Exception ex)
             {
+                var error = new Error
+                {
+                    Code = (int)ErrorCode.InternalError,
+                    Message = $"Internal error while converting params",
+                    Data = ex
+                };
+
                 await SendResponse(sender, new Response
                 {
                     Id = request.Id,
-                    Error = new Error
-                    {
-                        Code = (int)ErrorCode.InternalError,
-                        Message = $"Internal error while converting params",
-                        Data = ex
-                    }
+                    Error = error
                 });
 
+                OnError?.Invoke(error);
                 return;
             }
 
@@ -354,18 +374,21 @@ namespace UdpJson
                 });
             } catch (Exception ex)
             {
+                var error = new Error
+                {
+                    Code = (int)ErrorCode.InternalError,
+                    Message = $"Internal error while invoking '{request.Method}'",
+                    Data = ex
+                };
+
                 // step 5b: send an error response (otherwise)
                 await SendResponse(sender, new Response
                 {
                     Id = request.Id,
-                    Error = new Error
-                    {
-                        Code = (int)ErrorCode.InternalError,
-                        Message = $"Internal error while invoking '{request.Method}'",
-                        Data = ex
-                    }
+                    Error = error
                 });
 
+                OnError?.Invoke(error);
                 // don't transition if method call failed
                 return;
             }
