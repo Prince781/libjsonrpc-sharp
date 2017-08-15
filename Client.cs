@@ -47,6 +47,8 @@ namespace UdpJson
         /// </summary>
         public int Port { get; }
 
+        private Uri m_remoteUri;
+
         /// <summary>
         /// The receive timeout in milliseconds.
         /// </summary>
@@ -71,7 +73,7 @@ namespace UdpJson
         /// <param name="timeout">The timeout in milliseconds.</param>
         public Client(Uri remote, int port, int timeout)
         {
-            m_remoteEP = new IPEndPoint(IPAddress.Parse(remote.Host), remote.Port);
+            m_remoteUri = remote;
             Port = port;
             Timeout = timeout;
 
@@ -93,7 +95,7 @@ namespace UdpJson
             m_cancelToken = m_cancelTokenSource.Token;
 
             m_responses = new ConcurrentDictionary<ulong, Response>();
-            m_remoteEP = new IPEndPoint(IPAddress.Any, 0);
+            m_remoteEP = new IPEndPoint(IPAddress.Parse(m_remoteUri.Host), m_remoteUri.Port);
 
             m_backgroundTask = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
