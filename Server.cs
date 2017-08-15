@@ -81,7 +81,7 @@ namespace UdpJson
 
             m_contexts = new List<ExecutionContext>();
 
-            if (methods != null)
+            if (methods != null && methods.Count > 0)
             {
                 Tuple<string, Type> invalid;
 
