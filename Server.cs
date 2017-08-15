@@ -285,7 +285,10 @@ namespace UdpJson
                     Data = ex
                 };
 
-                await SendResponse(sender, new Response { Error = error });
+                await SendResponse(sender, new Response {
+                    Id = request.Id,
+                    Error = error
+                });
 
                 OnError?.Invoke(error);
 
