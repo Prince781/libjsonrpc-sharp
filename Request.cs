@@ -64,7 +64,7 @@ namespace UdpJson
         public void CheckValidity()
         {
             if (Jsonrpc != "2.0")
-                throw new RpcException($"Field 'jsonrpc' must be exactly '2.0' instead of {Jsonrpc}.");
+                throw new RpcException($"Field '{nameof(Jsonrpc).ToString()}' must be exactly '2.0' instead of {Jsonrpc}.");
         }
     }
 }
