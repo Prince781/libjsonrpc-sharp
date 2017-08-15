@@ -41,12 +41,13 @@ namespace UdpJson
         public void CheckValidity()
         {
             if (Jsonrpc != "2.0")
-                throw new RpcException($"Field 'jsonrpc' must be exactly '2.0', instead of {Jsonrpc}");
+                throw new RpcException($"Field '{nameof(Jsonrpc).ToLower()}' must be exactly '2.0', instead of {Jsonrpc}");
 
             if (Result != null)
             {
                 if (Error != null)
-                    throw new RpcException("Cannot have field 'error' be non-null when 'result' is non-null.");
+                    throw new RpcException($"Cannot have field '{nameof(Error).ToLower()}' be " +
+                        $"non-null when '{nameof(Result).ToLower()}' is non-null.");
 
                 return;
             }
@@ -59,7 +60,8 @@ namespace UdpJson
             if (code == ErrorCode.InvalidRequest || code == ErrorCode.ParseError)
             {
                 if (Id != null)
-                    throw new RpcException($"Cannot have field 'id' be non-null when error code is either {ErrorCode.InvalidRequest} or {ErrorCode.ParseError}");
+                    throw new RpcException($"Cannot have field '{nameof(Id).ToLower()}' be non-null" +
+                        $" when error code is either {ErrorCode.InvalidRequest} or {ErrorCode.ParseError}");
             }
         }
     }
