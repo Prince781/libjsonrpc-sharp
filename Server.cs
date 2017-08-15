@@ -114,6 +114,7 @@ namespace UdpJson
             m_startProcessingTime = DateTime.Now;
             PacketsReceived = 0;
 
+            // see https://stackoverflow.com/questions/20261300/what-is-correct-way-to-combine-long-running-tasks-with-async-await-pattern
             Task<Task> task = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
             m_backgroundTask = task.Unwrap();
@@ -154,7 +155,7 @@ namespace UdpJson
             {
                 while (!m_cancelToken.IsCancellationRequested)
                 {
-                    if ((packet = await GetPacket()) == null)
+                    if ((packet = GetPacket()) == null)
                         continue;
 
                     // process packet as request
@@ -162,37 +163,25 @@ namespace UdpJson
                 }
             } catch (Exception ex)
             {
-#if !NETSTANDARD2_0
-                Debug
-#else
-                Trace
-#endif
-                .WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
+                Trace.WriteLine($"Received exception in task {Task.CurrentId} -> {ex}");
             }
 
             IsProcessing = false;
         }
 
-        private async Task<byte[]> GetPacket()
+        private byte[] GetPacket()
         {
             byte[] buffer;
 
             try
             {
-                var result = await m_udp.ReceiveAsync();
-                buffer = result.Buffer;
-                m_endPoint = result.RemoteEndPoint;
+                buffer = m_udp.Receive(ref m_endPoint);
                 PacketsReceived++;
             } catch (SocketException ex)
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
                 {
-#if !NETSTANDARD2_0
-                    Debug
-#else
-                    Trace
-#endif
-                    .WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
+                    Trace.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
                 }
                 else if (ex.SocketErrorCode == SocketError.ConnectionReset)
                 {
@@ -202,12 +191,7 @@ namespace UdpJson
                     // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
                     if (m_lastResponseEP != null)
                     {
-#if !NETSTANDARD2_0
-                        Debug
-#else
-                        Trace
-#endif
-                        .WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
+                        Trace.WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
                     }
                     else
                     {
@@ -215,22 +199,13 @@ namespace UdpJson
                     }
                 } else
                 {
-#if !NETSTANDARD2_0
-                    Debug
-#else
-                    Trace
-#endif
-                    .WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
+                    Trace.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
                 }
                 return null;
             }
 
-#if !NETSTANDARD2_0
-            Debug
-#else
-            Trace
-#endif
-            .WriteLine($"Received command packet from {m_endPoint}");
+
+            Trace.WriteLine($"Received command packet from {m_endPoint}");
 
             return buffer;
         }
@@ -245,12 +220,7 @@ namespace UdpJson
                 request = JsonConvert.DeserializeObject<Request>(packetStr);
             } catch (Exception ex)
             {
-#if !NETSTANDARD2_0
-                Debug
-#else
-                Trace
-#endif
-                .WriteLine($"Failed to deserialize request object: {ex}");
+                Trace.WriteLine($"Failed to deserialize request object: {ex}");
 
                 if (ex is JsonReaderException)
                 {
@@ -298,12 +268,7 @@ namespace UdpJson
                 request.CheckValidity();
             } catch (RpcException ex)
             {
-#if !NETSTANDARD2_0
-                Debug
-#else
-                Trace
-#endif
-                .WriteLine($"Invalid request: {ex}");
+                Trace.WriteLine($"Invalid request: {ex}");
 
                 await SendResponse(sender, new Response
                 {
@@ -453,13 +418,9 @@ namespace UdpJson
             }));
 
             m_lastResponseEP = toEndpoint;
+
+            Trace.WriteLine($"Sending response to {toEndpoint}");
             await m_udp.SendAsync(data, data.Length, toEndpoint);
-#if !NETSTANDARD2_0
-            Debug
-#else
-            Trace
-#endif
-            .WriteLine($"Sending response to {toEndpoint}");
         }
     }
 }

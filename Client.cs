@@ -93,12 +93,9 @@ namespace UdpJson
             m_cancelToken = m_cancelTokenSource.Token;
 
             m_responses = new ConcurrentDictionary<ulong, Response>();
-            m_remoteEP = new IPEndPoint(IPAddress.Any, 0);          
+            m_remoteEP = new IPEndPoint(IPAddress.Any, 0);
 
-            // see https://stackoverflow.com/questions/20261300/what-is-correct-way-to-combine-long-running-tasks-with-async-await-pattern
-            Task<Task> task = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-
-            m_backgroundTask = task.Unwrap();
+            m_backgroundTask = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         /// <summary>
@@ -127,7 +124,7 @@ namespace UdpJson
             IsProcessing = false;
         }
 
-        private async Task Run()
+        private void Run()
         {
             IsProcessing = true;
 
@@ -137,7 +134,7 @@ namespace UdpJson
                 Response resp;
 
                 // step 1: wait synchronously for a response
-                if ((data = await GetPacket()) == null)
+                if ((data = GetPacket()) == null)
                     continue;
 
                 // step 2: parse response
@@ -166,15 +163,13 @@ namespace UdpJson
             IsProcessing = false;
         }
 
-        private async Task<byte[]> GetPacket()
+        private byte[] GetPacket()
         {
             byte[] data = null;
 
             try
             {
-                var result = await m_udp.ReceiveAsync();
-                data = result.Buffer;
-                m_remoteEP = result.RemoteEndPoint;
+                data = m_udp.Receive(ref m_remoteEP);
             } catch (SocketException ex)
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
@@ -183,12 +178,7 @@ namespace UdpJson
                 }
                 else
                 {
-#if !NETSTANDARD2_0
-                    Debug
-#else
-                    Trace
-#endif
-                    .WriteLine($"Encountered exception while attempting to receive data: {ex}");
+                    Trace.WriteLine($"Encountered exception while attempting to receive data: {ex}");
                 }
             }
 
@@ -205,12 +195,7 @@ namespace UdpJson
                 resp = JsonConvert.DeserializeObject<Response>(text);
             } catch (Exception ex)
             {
-#if !NETSTANDARD2_0
-                Debug
-#else
-                Trace
-#endif
-                .WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
+                Trace.WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
             }
 
             return resp;
@@ -231,12 +216,7 @@ namespace UdpJson
             {
                 if ((DateTime.Now - startTime) >= maxdiff)
                 {
-#if !NETSTANDARD2_0
-                    Debug
-#else
-                    Trace
-#endif
-                    .WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
+                    Trace.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
                     return null;
                 }
 
