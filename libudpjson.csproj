@@ -15,16 +15,19 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <OutputPath>bin\Debug\</OutputPath>
     <DocumentationFile>bin\Debug\libupdjson.xml</DocumentationFile>
     <GenerateSerializationAssemblies>Auto</GenerateSerializationAssemblies>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard1.4|net46|AnyCPU'">
+    <OutputPath>bin\Debug\</OutputPath>
     <DocumentationFile>bin\Debug\libudpjson.xml</DocumentationFile>
     <Optimize>false</Optimize>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|netstandard1.4|net46|AnyCPU'">
+    <OutputPath>bin\Release\</OutputPath>
     <DocumentationFile>bin\Release\libudpjson.xml</DocumentationFile>
   </PropertyGroup>
 
