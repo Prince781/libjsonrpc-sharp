@@ -204,12 +204,12 @@ namespace UdpJson
         }
 
         /// <summary>
-        /// Waits for a response to a method call. Times out after 20 seconds.
+        /// Waits for a response to a method call. Times out after <see cref="Timeout"/> milliseconds.
         /// </summary>
         /// <returns>null if there is a timeout</returns>
         private async Task<Response> WaitForResponse(Request request)
         {
-            TimeSpan maxdiff = TimeSpan.FromSeconds(20);
+            TimeSpan maxdiff = TimeSpan.FromMilliseconds(Timeout);
             DateTime startTime = DateTime.Now;
 
             // On a separate thread from the one this method
@@ -224,7 +224,7 @@ namespace UdpJson
 
                 // loop until we get something
                 // wait for response listener background thread to get something
-                await Task.Delay(200);
+                await Task.Delay(Timeout / 10);
             }
 
             // we've gotten a response
