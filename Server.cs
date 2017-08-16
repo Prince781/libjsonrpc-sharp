@@ -344,7 +344,10 @@ namespace UdpJson
 
             try
             {
-                method = (Method) request.ParamsAsObject(methodType);
+                if (request.Params != null)
+                    method = (Method)request.ParamsAsObject(methodType);
+                else
+                    method = (Method)JsonConvert.DeserializeObject("{}", methodType);
             } catch (Exception ex)
             {
                 var error = new Error
