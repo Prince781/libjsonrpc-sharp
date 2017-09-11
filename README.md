@@ -36,7 +36,7 @@ $ cd libjsonrpc-sharp
 $ export FrameworkPathOverride=/usr/lib/mono/$API_VERSION_DIR/
 ```
 
-Where `$API_VERSION_DIR` could `4.6.2-api`. Check what's contained in `/usr/lib/mono/`.
+Where `$API_VERSION_DIR` could `4.6.2-api`. Check what's contained in `/usr/lib/mono/`. [See this issue for more information.](https://github.com/dotnet/cli/issues/5977)
 
 Finally, do:
 
