@@ -196,7 +196,7 @@ namespace JsonRpc
                     // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
                     if (m_lastResponseEP != null)
                     {
-                        Trace.WriteLine($"Config server @ {m_lastResponseEP} may not be running.");
+                        Trace.WriteLine($"Server @ {m_lastResponseEP} may not be running.");
                     }
                     else
                     {
