@@ -10,7 +10,7 @@ using System.Net;
 using System.Diagnostics;
 using Newtonsoft.Json;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// Invoked when an <see cref="Error"/> is received back

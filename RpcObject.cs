@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// Base for any object sent over JSON-RPC.

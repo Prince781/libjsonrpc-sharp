@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// Thrown when there is an internal exception dealing with JSON-RPC objects.

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// A JSON-RPC call is represented by sending a Request object to a Server.

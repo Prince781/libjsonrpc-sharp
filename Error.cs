@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// An error code for <see cref="Error"/>s.

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// A response is sent from Server to Client after a request is made.

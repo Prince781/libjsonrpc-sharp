@@ -10,7 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace UdpJson
+namespace JsonRpc
 {
     // TODO: make this disposable
     /// <summary>

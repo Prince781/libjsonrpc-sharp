@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace UdpJson
+namespace JsonRpc
 {
     /// <summary>
     /// A method that is invoked.
