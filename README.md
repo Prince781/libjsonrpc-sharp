@@ -28,10 +28,19 @@ Eventually once 15.3 comes out of preview status, you should not use this link, 
 ### Linux
 
 - Make sure you have `dotnet` and `dotnet-cli` installed. Often the two may be bundled together.
+- Make sure you have `mono` installed.
 
 ```bash
 $ git clone https://github.com/Prince781/libjsonrpc-sharp.git
 $ cd libjsonrpc-sharp
+$ export FrameworkPathOverride=/usr/lib/mono/$API_VERSION_DIR/
+```
+
+Where `$API_VERSION_DIR` could `4.6.2-api`. Check what's contained in `/usr/lib/mono/`.
+
+Finally, do:
+
+```bash
 $ dotnet build
 ```
 
