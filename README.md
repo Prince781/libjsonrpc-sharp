@@ -31,7 +31,7 @@ Eventually once 15.3 comes out of preview status, you should not use this link, 
 
 ```bash
 $ git clone https://github.com/Prince781/libjsonrpc-sharp.git
-$ cd libjsonrpc-shrp
+$ cd libjsonrpc-sharp
 $ dotnet build
 ```
 
