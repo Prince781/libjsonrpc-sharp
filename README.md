@@ -13,7 +13,9 @@ You must install these:
 - [.NET Core 2.0 SDK (x86 and x64)](https://github.com/dotnet/cli/tree/release/2.0.0#installers-and-binaries)
 - Visual Studio 2017, version 15.3 or later to support .NET Core 2.0/.NET Standard 2.0 projects. As of writing, version 15.3 is a
 preview build 2. You can get it here: https://blogs.msdn.microsoft.com/dotnet/2017/06/12/net-core-2-and-visual-studio-2017-preview-2/. 
+
 Make sure to launch VS2017 preview (2), which is a separate application from the installed VS2017.
+
 Eventually once 15.3 comes out of preview status, you should not use this link, and check ahead of time that your VS2017 can create .NET Core 2.0 projects.
 
 ## Dependencies
