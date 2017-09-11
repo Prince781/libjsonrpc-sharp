@@ -1,7 +1,7 @@
 ﻿libjsonrpc-sharp
 ================
 
-This library allows you to send and receive JSON-RPC commands over UDP.
+This library allows you to send and receive JSON-RPC commands over **UDP**. [A TCP backend is a todo item.](TODO.md)
 It is based on the [JSON-RPC 2.0 spec](http://www.jsonrpc.org/specification).
 
 ## Authors
