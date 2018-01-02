@@ -46,3 +46,6 @@ Eventually once 15.3 comes out of preview status, you should not use this link, 
 
 ## Dependencies
 - Newtonsoft.Json 10.0.3
+
+## Documentation
+Run `doxygen Doxyfile` and look in `html/` for documentation.
