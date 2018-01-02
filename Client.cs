@@ -31,11 +31,11 @@ namespace JsonRpc
         /// <summary>
         /// The remote server.
         /// </summary>
-        public string Remote { get { return m_remoteEP.ToString(); } }
+        public string Remote => m_remoteEP.ToString();
 
         private ulong uid = 0;
 
-        private ulong NextUID { get { return ++uid; } }
+        private ulong NextUID => ++uid;
 
         private ConcurrentDictionary<ulong, Response> m_responses;
         private Task m_backgroundTask;
