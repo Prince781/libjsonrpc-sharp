@@ -9,6 +9,7 @@ using System.Threading;
 using System.Net;
 using System.Diagnostics;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace JsonRpc
 {
@@ -47,7 +48,7 @@ namespace JsonRpc
         /// </summary>
         public int Port { get; }
 
-        private Uri m_remoteUri;
+        private readonly Uri m_remoteUri;
 
         /// <summary>
         /// The receive timeout in milliseconds.
@@ -146,7 +147,7 @@ namespace JsonRpc
                 // step 3: add to list of responses
                 if (resp.Id == null)
                 {
-                    if (resp.Result == null)
+                    if (resp.ResultJson == null)
                     {
                         // there was an error
                         GotErrorResponse?.Invoke(resp.Error);
@@ -172,7 +173,8 @@ namespace JsonRpc
             try
             {
                 data = m_udp.Receive(ref m_remoteEP);
-            } catch (SocketException ex)
+            }
+            catch (SocketException ex)
             {
                 if (ex.SocketErrorCode == SocketError.TimedOut)
                 {
@@ -182,6 +184,10 @@ namespace JsonRpc
                 {
                     Trace.WriteLine($"Encountered exception while attempting to receive data: {ex}");
                 }
+            }
+            catch (ObjectDisposedException ex)
+            {
+                Trace.WriteLine($"Socket was closed: {ex}");
             }
 
             return data;
@@ -207,7 +213,7 @@ namespace JsonRpc
         /// Waits for a response to a method call. Times out after <see cref="Timeout"/> milliseconds.
         /// </summary>
         /// <returns>null if there is a timeout</returns>
-        private async Task<Response> WaitForResponse(Request request)
+        private async Task<Response> WaitForResponse<T>(Request<T> request)
         {
             TimeSpan maxdiff = TimeSpan.FromMilliseconds(Timeout);
             DateTime startTime = DateTime.Now;
@@ -216,7 +222,7 @@ namespace JsonRpc
             // is running on, we are listening for a UDP response.
             while (!m_responses.ContainsKey(request.Id.Value))
             {
-                if ((DateTime.Now - startTime) >= maxdiff)
+                if (DateTime.Now - startTime >= maxdiff)
                 {
                     Trace.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
                     return null;
@@ -229,8 +235,7 @@ namespace JsonRpc
 
             // we've gotten a response
 
-            Response response;
-            m_responses.TryRemove(request.Id.Value, out response);
+            m_responses.TryRemove(request.Id.Value, out var response);
             return response;
         }
 
@@ -240,67 +245,61 @@ namespace JsonRpc
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
         /// <returns></returns>
-        public async Task<Response> CallAsync(string method, IDictionary<string, object> @params = null)
+        public async Task<Response> CallAsync<T>(string method, T @params)
         {
-            var request = new Request
+            var request = new Request<T>
             {
                 Id = NextUID,
                 Method = method,
                 Params = @params
             };
 
-            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
+            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request, 
+                new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }));
 
             await m_udp.SendAsync(data, data.Length, m_remoteEP);
             return await WaitForResponse(request);
         }
 
         /// <summary>
-        /// Calls a remote method asynchronously.
+        /// Calls a remote method without parameters.
         /// </summary>
         /// <param name="method">The name of the method.</param>
-        /// <param name="params">The object to serialize to a dictionary. This cannot be a primitive type.</param>
         /// <returns></returns>
-        public Task<Response> CallAsync(string method, object @params)
+        public Task<Response> CallAsync(string method)
         {
-            string serialized = JsonConvert.SerializeObject(@params);
-            var deserialized = JsonConvert.DeserializeObject<IDictionary<string, object>>(serialized);
-
-            return CallAsync(method, deserialized);
+            return CallAsync<object>(method, null);
         }
 
         /// <summary>
-        /// Sends a notification. The server will not respond to a notification unless there
-        /// is an error.
+        /// Sends a notification with parameters. The server will not respond to a
+        /// notification unless there is an error.
         /// </summary>
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
         /// <returns></returns>
-        public Task<int> NotifyAsync(string method, IDictionary<string, object> @params = null)
+        public async Task NotifyAsync<T>(string method, T @params)
         {
-            var request = new Request
+            var request = new Request<T>
             {
                 Method = method,
                 Params = @params
             };
-
-            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
-            return m_udp.SendAsync(data, data.Length, m_remoteEP);
+            
+            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request, 
+                new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }));
+            await m_udp.SendAsync(data, data.Length, m_remoteEP);
         }
 
         /// <summary>
-        /// Sends a notification. The server will not respond to a notification unless there
-        /// is an error.
+        /// Sends a notification without parameters. The server will not respond
+        /// to a notification unless there is an error.
         /// </summary>
         /// <param name="method">The name of the method.</param>
-        /// <param name="params">The object to serialize to a dictionary. This cannot be a primitive type.</param>
         /// <returns></returns>
-        public Task<int> NotifyAsync(string method, object @params)
+        public Task NotifyAsync(string method)
         {
-            string serialized = JsonConvert.SerializeObject(@params);
-            var deserialized = JsonConvert.DeserializeObject<IDictionary<string, object>>(serialized);
-
-            return NotifyAsync(method, deserialized);
+            return NotifyAsync<object>(method, null);
         }
     }
 }

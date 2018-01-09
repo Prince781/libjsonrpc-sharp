@@ -57,9 +57,7 @@ namespace JsonRpc
         /// <summary>
         /// The current execution context.
         /// </summary>
-        public ExecutionContext Context {
-            get { return m_contexts.Count > 0 ? m_contexts[m_contexts.Count - 1] : null; }
-        }
+        public ExecutionContext Context => m_contexts.Count > 0 ? m_contexts[m_contexts.Count - 1] : null;
 
         /// <summary>
         /// Data passed to any methods invoked.
@@ -152,14 +150,13 @@ namespace JsonRpc
 
         private async Task Run()
         {
-            byte[] packet;
-
             IsProcessing = true;
 
             try
             {
                 while (!m_cancelToken.IsCancellationRequested)
                 {
+                    byte[] packet;
                     if ((packet = GetPacket()) == null)
                         continue;
 
@@ -184,28 +181,31 @@ namespace JsonRpc
                 PacketsReceived++;
             } catch (SocketException ex)
             {
-                if (ex.SocketErrorCode == SocketError.TimedOut)
+                switch (ex.SocketErrorCode)
                 {
-                    Trace.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
+                    case SocketError.TimedOut:
+                        Trace.WriteLine($"Timeout waiting for UDP input @ {DateTime.Now}");
+                        break;
+                    case SocketError.ConnectionReset:
+                        // Windows sends a "Connection Reset" message if we try to receive
+                        // packets, and the last packet we sent was not received by the remote.
+                        // see https://support.microsoft.com/en-us/help/263823/winsock-recvfrom-now-returns-wsaeconnreset-instead-of-blocking-or-timi
+                        // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
+                        if (m_lastResponseEP != null)
+                        {
+                            Trace.WriteLine($"Server @ {m_lastResponseEP} may not be running.");
+                        }
+                        else
+                        {
+                            // otherwise, we silently ignore this error
+                        }
+
+                        break;
+                    default:
+                        Trace.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
+                        break;
                 }
-                else if (ex.SocketErrorCode == SocketError.ConnectionReset)
-                {
-                    // Windows sends a "Connection Reset" message if we try to receive
-                    // packets, and the last packet we sent was not received by the remote.
-                    // see https://support.microsoft.com/en-us/help/263823/winsock-recvfrom-now-returns-wsaeconnreset-instead-of-blocking-or-timi
-                    // see https://stackoverflow.com/questions/7201862/an-existing-connection-was-forcibly-closed-by-the-remote-host
-                    if (m_lastResponseEP != null)
-                    {
-                        Trace.WriteLine($"Server @ {m_lastResponseEP} may not be running.");
-                    }
-                    else
-                    {
-                        // otherwise, we silently ignore this error
-                    }
-                } else
-                {
-                    Trace.WriteLine($"Exception {ex.SocketErrorCode} in UDP receive: {ex}");
-                }
+
                 return null;
             }
 
@@ -227,42 +227,50 @@ namespace JsonRpc
             {
                 Trace.WriteLine($"Failed to deserialize request object: {ex}");
 
-                if (ex is JsonReaderException)
+                switch (ex)
                 {
-                    var error = new Error
+                    case JsonReaderException _:
                     {
-                        Code = (int)ErrorCode.ParseError,
-                        Message = "Parse error",
-                        Data = ex
-                    };
+                        var error = new Error
+                        {
+                            Code = (int)ErrorCode.ParseError,
+                            Message = "Parse error",
+                            Data = ex
+                        };
 
-                    await SendResponse(sender, new Response { Error = error });
+                        await SendResponse(sender, new Response { Error = error });
 
-                    OnError?.Invoke(error);
-                } else if (ex is JsonSerializationException)
-                {
-                    var error = new Error
+                        OnError?.Invoke(error);
+                        break;
+                    }
+                    case JsonSerializationException _:
                     {
-                        Code = (int)ErrorCode.InvalidRequest,
-                        Message = "Invalid request",
-                        Data = ex
-                    };
+                        var error = new Error
+                        {
+                            Code = (int)ErrorCode.InvalidRequest,
+                            Message = "Invalid request",
+                            Data = ex
+                        };
 
-                    await SendResponse(sender, new Response { Error = error });
+                        await SendResponse(sender, new Response { Error = error });
 
-                    OnError?.Invoke(error);
-                } else
-                {
-                    var error = new Error
+                        OnError?.Invoke(error);
+                        break;
+                    }
+                    default:
                     {
-                        Code = (int)ErrorCode.InternalError,
-                        Message = "Some other error occurred",
-                        Data = ex
-                    };
+                        var error = new Error
+                        {
+                            Code = (int)ErrorCode.InternalError,
+                            Message = "Some other error occurred",
+                            Data = ex
+                        };
 
-                    await SendResponse(sender, new Response { Error = error });
+                        await SendResponse(sender, new Response { Error = error });
 
-                    OnError?.Invoke(error);
+                        OnError?.Invoke(error);
+                        break;
+                    }
                 }
 
                 return;
@@ -344,19 +352,18 @@ namespace JsonRpc
 
             try
             {
-                if (request.Params != null)
-                    method = (Method)request.ParamsAsObject(methodType);
+                if (request.ParamsJson != null)
+                    method = (Method) JsonConvert.DeserializeObject(request.ParamsJson, methodType);
                 else
-                    method = (Method)JsonConvert.DeserializeObject("{}", methodType);
+                    method = (Method) JsonConvert.DeserializeObject("{}", methodType);
             } catch (Exception ex)
             {
                 var error = new Error
                 {
-                    Code = (int)ErrorCode.InternalError,
-                    Message = $"Internal error while converting params",
+                    Code = (int) ErrorCode.InternalError,
+                    Message = $"Internal error while converting params: {ex.Message}",
                     Data = ex
                 };
-
                 await SendResponse(sender, new Response
                 {
                     Id = request.Id,
@@ -376,7 +383,7 @@ namespace JsonRpc
                 await SendResponse(sender, new Response
                 {
                     Id = request.Id,
-                    Result = result
+                    ResultJson = JsonConvert.SerializeObject(result)
                 });
             } catch (Exception ex)
             {
@@ -438,14 +445,11 @@ namespace JsonRpc
         }
         #endregion
 
-        async Task SendResponse(IPEndPoint toEndpoint, Response response)
+        private async Task SendResponse(IPEndPoint toEndpoint, Response response)
         {
             // see https://stackoverflow.com/questions/34070459/newtonsoft-jsonserializer-lower-case-properties-and-dictionary
-            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response, new JsonSerializerSettings
-            {
-                ContractResolver = new CamelCasePropertyNamesContractResolver()
-            }));
-
+            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response, 
+                new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }));
             m_lastResponseEP = toEndpoint;
 
             Trace.WriteLine($"Sending response to {toEndpoint}");
