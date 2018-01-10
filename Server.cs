@@ -1,10 +1,8 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using ConcurrentCollections;
 
 namespace JsonRpc
 {
@@ -42,7 +40,7 @@ namespace JsonRpc
         /// <summary>
         /// Holds all handlers for server events, indexed by method.
         /// </summary>
-        private readonly ConcurrentDictionary<string, ConcurrentHashSet<HandlerInfo>> _handlers;
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<ulong, HandlerInfo>> _handlers;
 
         /// <summary>
         /// Stores all handlers, indexed by their ID.
@@ -107,7 +105,7 @@ namespace JsonRpc
         public Server()
         {
             _clients = new ConcurrentBag<Client>();
-            _handlers = new ConcurrentDictionary<string, ConcurrentHashSet<HandlerInfo>>();
+            _handlers = new ConcurrentDictionary<string, ConcurrentDictionary<ulong, HandlerInfo>>();
         }
 
         /// <summary>
@@ -128,7 +126,7 @@ namespace JsonRpc
                 try
                 {
                     if (!_handlers.ContainsKey(method)) return;
-                    foreach (var info in _handlers[method])
+                    foreach (var info in _handlers[method].Values)
                     {
                         if (info is TypedHandlerInfo tinfo)
                         {
@@ -174,7 +172,7 @@ namespace JsonRpc
                 try
                 {
                     if (!_handlers.ContainsKey(method)) return;
-                    foreach (var info in _handlers[method])
+                    foreach (var info in _handlers[method].Values)
                     {
                         if (info is TypedHandlerInfo tinfo)
                         {
@@ -238,9 +236,11 @@ namespace JsonRpc
 
         private void AddHandlerInfo(HandlerInfo hinfo)
         {
-            _handlers.AddOrUpdate(hinfo.method, new ConcurrentHashSet<HandlerInfo> {hinfo}, (methodName, infos) =>
+            var dict = new ConcurrentDictionary<ulong, HandlerInfo>();
+            dict.AddOrUpdate(hinfo.uid, hinfo, (arg1, info) => hinfo);
+            _handlers.AddOrUpdate(hinfo.method, dict, (methodName, infos) =>
             {
-                infos.Add(hinfo);
+                infos.AddOrUpdate(hinfo.uid, hinfo, (arg1, info) => hinfo);
                 return infos;
             });
             _handlerInfos.AddOrUpdate(hinfo.uid, hinfo, (sameUid, info) => hinfo);           
@@ -282,9 +282,9 @@ namespace JsonRpc
         /// <returns>whether the operation was successful</returns>
         public bool RemoveHandler(ulong uid)
         {
-            return _handlerInfos.TryRemove(uid, out var hinfo) 
-                   && _handlers.TryGetValue(hinfo.method, out var set) 
-                   && set.TryRemove(hinfo);
+            return _handlerInfos.TryRemove(uid, out var hinfo)
+                   && _handlers.TryGetValue(hinfo.method, out var set)
+                   && set.TryRemove(hinfo.uid, out var _);
         }
     }
 }
