@@ -106,6 +106,7 @@ namespace JsonRpc
         {
             _clients = new ConcurrentBag<Client>();
             _handlers = new ConcurrentDictionary<string, ConcurrentDictionary<ulong, HandlerInfo>>();
+            _handlerInfos = new ConcurrentDictionary<ulong, HandlerInfo>();
         }
 
         /// <summary>
