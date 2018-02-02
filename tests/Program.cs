@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using JsonRpc;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using tests.tcp;
 
 namespace tests
@@ -214,8 +216,40 @@ namespace tests
             }
             else if (Test == TestType.Pipe)
             {
+                /*
                 var testServer = new TestRpcServer();
                 testServer.AcceptStream(new IOStream(Console.OpenStandardInput(), Console.OpenStandardOutput()));
+                */
+
+                while (true)
+                {
+                    JsonTextReader reader = null;
+                    
+                    try
+                    {
+                        string json = JObject.Load(reader = new JsonTextReader(Console.In)).ToString();
+                        Console.WriteLine($"You entered this JSON: {json}");
+                    }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            int ch = Console.In.Read();
+                            if (ch == -1)
+                                break;
+                        }
+                        catch (Exception exc)
+                        {
+                            // ignored
+                            Console.Error.WriteLine($"Failed to read after: {exc}");
+                        }
+
+                        Console.Error.WriteLine(ex);
+                    }
+                    
+                    if (reader != null)
+                        Console.WriteLine($"token type: {reader.TokenType}");
+                }
             }
             else
             {
