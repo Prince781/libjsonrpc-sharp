@@ -13,9 +13,9 @@ namespace JsonRpc
     public class Server : IDisposable
     {
         /// <summary>
-        /// All clients we are connected to.
+        /// Invoked when the server is disposed. Used by clients to shut down.
         /// </summary>
-        private readonly ConcurrentBag<Client> _clients;
+        internal event Action Disposed;
 
         /// <summary>
         /// Handles a particular event (notification or method call). If <paramref name="id"/>
@@ -23,19 +23,21 @@ namespace JsonRpc
         /// </summary>
         /// <param name="server">The server that received this message (this).</param>
         /// <param name="client">The client that sent this message.</param>
+        /// <param name="method">The name of the method invoked.</param>
         /// <param name="id">The ID of the method, or null if a notification.</param>
         /// <param name="params">The optional parmeters sent by the client.</param>
-        public delegate void Handler(Server server, Client client, ulong? id, object @params);
+        public delegate void Handler(Server server, Client client, string method, ulong? id, object @params);
         
         /// <summary>
         /// A typed handler that requires parameters of a certain type. <see cref="Handler"/>
         /// </summary>
         /// <param name="server">The server that received this message (this).</param>
         /// <param name="client">The client that sent this message.</param>
+        /// <param name="method">The name of the method invoked.</param>
         /// <param name="id">The ID of the method, or null if a notification.</param>
         /// <param name="params">The optional parameters sent by the client.</param>
         /// <typeparam name="T">The type of the parameters.</typeparam>
-        public delegate void TypedHandler<in T>(Server server, Client client, ulong? id, T @params);
+        public delegate void TypedHandler<in T>(Server server, Client client, string method, ulong? id, T @params);
 
         /// <summary>
         /// Holds all handlers for server events, indexed by method.
@@ -104,7 +106,6 @@ namespace JsonRpc
         /// </summary>
         public Server()
         {
-            _clients = new ConcurrentBag<Client>();
             _handlers = new ConcurrentDictionary<string, ConcurrentDictionary<ulong, HandlerInfo>>();
             _handlerInfos = new ConcurrentDictionary<ulong, HandlerInfo>();
         }
@@ -122,22 +123,29 @@ namespace JsonRpc
             var client = new Client(stream);
             
             client.HandleNotificationRaw += ClientOnHandleNotificationRaw;
-            client.HandleNotificationRaw += async (method, json) =>
+            client.HandleNotificationRaw += async (_, method, json) =>
             {
                 try
                 {
-                    if (!_handlers.ContainsKey(method)) return;
+                    if (!_handlers.ContainsKey(method))
+                    {
+                        await _.ReplyError(null, new Error
+                        {
+                            Code = (int) ErrorCode.MethodNotFound
+                        });
+                        return;                       
+                    }
                     foreach (var info in _handlers[method].Values)
                     {
                         if (info is TypedHandlerInfo tinfo)
                         {
                             try
                             {
-                                tinfo.handler(this, client, null, JsonConvert.DeserializeObject(json, tinfo.type));
+                                tinfo.handler(this, _, method, null, JsonConvert.DeserializeObject(json, tinfo.type));
                             }
                             catch (JsonSerializationException ex)
                             {
-                                await client.ReplyError(new Error
+                                await _.ReplyError(null, new Error
                                 {
                                     Code = (int) ErrorCode.InvalidParams,
                                     Message = $"Failed to deserialize parameters to the required type {tinfo.type}",
@@ -147,7 +155,7 @@ namespace JsonRpc
                         }
                         else
                         {
-                            info.handler(this, client, null, JsonConvert.DeserializeObject(json));
+                            info.handler(this, _, method, null, JsonConvert.DeserializeObject(json));
                         }
                     }
                 }
@@ -158,7 +166,7 @@ namespace JsonRpc
                     Trace.WriteLine($"JSON-RPC: received exception in HandleNotificationRaw for client: \n{ex}");                   
                     try
                     {
-                        await client.ReplyError(new Error
+                        await _.ReplyError(null, new Error
                         {
                             Code = (int) ErrorCode.InternalError,
                             Message = ex.Message
@@ -168,22 +176,29 @@ namespace JsonRpc
             };
             
             client.HandleCallRaw += ClientOnHandleCallRaw;
-            client.HandleCallRaw += async (method, id, json) =>
+            client.HandleCallRaw += async (_, method, id, json) =>
             {
                 try
                 {
-                    if (!_handlers.ContainsKey(method)) return;
+                    if (!_handlers.ContainsKey(method))
+                    {
+                        await _.ReplyError(id, new Error
+                        {
+                            Code = (int) ErrorCode.MethodNotFound
+                        });
+                        return;
+                    }
                     foreach (var info in _handlers[method].Values)
                     {
                         if (info is TypedHandlerInfo tinfo)
                         {
                             try
                             {
-                                tinfo.handler(this, client, id, JsonConvert.DeserializeObject(json, tinfo.type));
+                                tinfo.handler(this, _, method, id, JsonConvert.DeserializeObject(json, tinfo.type));
                             }
                             catch (JsonSerializationException ex)
                             {
-                                await client.ReplyError(new Error
+                                await _.ReplyError(id, new Error
                                 {
                                     Code = (int) ErrorCode.InvalidParams,
                                     Message = $"Failed to deserialize parameters to the required type {tinfo.type}",
@@ -193,7 +208,7 @@ namespace JsonRpc
                         }
                         else
                         {
-                            info.handler(this, client, id, JsonConvert.DeserializeObject(json));
+                            info.handler(this, _, method, id, JsonConvert.DeserializeObject(json));
                         }
                     }
                 }
@@ -202,7 +217,7 @@ namespace JsonRpc
                     Trace.WriteLine($"JSON-RPC: received exception in HandleCallRaw for client: \n{ex}");
                     try
                     {
-                        await client.ReplyError(new Error
+                        await _.ReplyError(id, new Error
                         {
                             Code = (int) ErrorCode.InternalError,
                             Message = ex.Message
@@ -211,18 +226,18 @@ namespace JsonRpc
                 }
             };
             
-            _clients.Add(client);
+            Disposed += client.Dispose;
             client.StartListening();
         }
 
-        private void ClientOnHandleNotificationRaw(string method, string paramsJson)
+        private void ClientOnHandleNotificationRaw(Client client, string method, string paramsJson)
         {
-            HandleNotification?.Invoke(method, JsonConvert.SerializeObject(paramsJson));
+            HandleNotification?.Invoke(client, method, JsonConvert.SerializeObject(paramsJson));
         }
 
-        private void ClientOnHandleCallRaw(string method, ulong id, string paramsJson)
+        private void ClientOnHandleCallRaw(Client client, string method, ulong id, string paramsJson)
         {
-            HandleCall?.Invoke(method, id, JsonConvert.SerializeObject(paramsJson));
+            HandleCall?.Invoke(client, method, id, JsonConvert.SerializeObject(paramsJson));
         }
 
         /// <summary>
@@ -230,9 +245,7 @@ namespace JsonRpc
         /// </summary>
         public void Dispose()
         {
-            while (!_clients.IsEmpty)
-                if (_clients.TryTake(out Client client))
-                    client.Close();
+            Disposed?.Invoke();
         }
 
         private void AddHandlerInfo(HandlerInfo hinfo)
@@ -271,8 +284,8 @@ namespace JsonRpc
         {
             ulong uid = NextHandlerUid;
             AddHandlerInfo(new TypedHandlerInfo(uid, method, 
-                (server, client, id, @params) =>
-                    handler(server, client, id, (T) @params), typeof(T)));
+                (server, client, methodName, id, @params) =>
+                    handler(server, client, methodName, id, (T) @params), typeof(T)));
             return uid;
         }
 

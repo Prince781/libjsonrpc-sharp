@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Sockets;
 using System.Reflection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -18,25 +19,24 @@ namespace JsonRpc
     /// <param name="error">The error.</param>
     public delegate void ErrorHandler(Error error);
 
-    // TODO: make this disposable
     /// <summary>
     /// A client sends requests and receives responses.
     /// </summary>
-    public class Client
+    public class Client : IDisposable
     {
         /// <summary>
         /// Handles a notification from the peer.
         /// </summary>
         /// <param name="method">The name of the method, like "textDocument/open"</param>
         /// <param name="params">The parameters of the method.</param>
-        public delegate void NotificationHandler(string method, object @params);
+        public delegate void NotificationHandler(Client Client, string method, object @params);
 
         /// <summary>
         /// Handles a notification from the peer.
         /// </summary>
         /// <param name="method">The name of the method.</param>
         /// <param name="paramsJson">The raw JSON of the parameters.</param>
-        internal delegate void NotificationHandlerRaw(string method, string paramsJson);
+        internal delegate void NotificationHandlerRaw(Client client, string method, string paramsJson);
 
         /// <summary>
         /// Handles a method call from the peer.
@@ -44,7 +44,7 @@ namespace JsonRpc
         /// <param name="method">The name of the method, like "textDocument/open"</param>
         /// <param name="id">The ID of the request object.</param>
         /// <param name="params">The parameters of the method call.</param>
-        public delegate void CallHandler(string method, ulong id, object @params);
+        public delegate void CallHandler(Client client, string method, ulong id, object @params);
 
         /// <summary>
         /// Handles a method call from the peer.
@@ -52,7 +52,7 @@ namespace JsonRpc
         /// <param name="method">The name of the method, like "textDocument/open"</param>
         /// <param name="id">The ID of the request object.</param>
         /// <param name="paramsJson">The raw JSON of the params object.</param>
-        internal delegate void CallHandlerRaw(string method, ulong id, string paramsJson);
+        internal delegate void CallHandlerRaw(Client client, string method, ulong id, string paramsJson);
         
         private ulong _uid = 0;
         private ulong NextUid => ++_uid;
@@ -103,6 +103,8 @@ namespace JsonRpc
         private readonly JsonTextReader _jsonReader;
         private readonly JsonTextWriter _jsonWriter;
 
+        private bool _closed;
+
         /// <summary>
         /// Creates a new client.
         /// </summary>
@@ -127,7 +129,7 @@ namespace JsonRpc
         /// </summary>
         public void StartListening()
         {
-            if (_cancelSource != null)
+            if (_cancelSource != null || _closed)
                 return;
             _cancelSource = new CancellationTokenSource();
             // see https://stackoverflow.com/questions/20261300/what-is-correct-way-to-combine-long-running-tasks-with-async-await-pattern
@@ -138,10 +140,20 @@ namespace JsonRpc
 
         private async Task Listen()
         {
-            while (!_cancelSource.IsCancellationRequested)
+            while (!_cancelSource.IsCancellationRequested && !_closed)
             {
                 // step 1: get the JSON
-                string json = await _jsonReader.ReadAsStringAsync(_cancelSource.Token);
+                string json = null;
+
+                try
+                {
+                    json = await _jsonReader.ReadAsStringAsync(_cancelSource.Token);
+                }
+                catch (EndOfStreamException)
+                {
+                    _closed = true;
+                }
+
                 if (json == null)
                     continue;
 
@@ -177,20 +189,20 @@ namespace JsonRpc
                         // we have a method call; save it for later
                         _requests.AddOrUpdate(req.Id.Value, req, (key, oldValue) => req);
                         // call handler
-                        HandleCall?.Invoke(req.Method, req.Id.Value, JsonConvert.DeserializeObject(req.ParamsJson));
-                        HandleCallRaw?.Invoke(req.Method, req.Id.Value, req.ParamsJson);
+                        HandleCall?.Invoke(this, req.Method, req.Id.Value, JsonConvert.DeserializeObject(req.ParamsJson));
+                        HandleCallRaw?.Invoke(this, req.Method, req.Id.Value, req.ParamsJson);
                     }
                     else
                     {
                         // we have a notification
                         // call handler
-                        HandleNotification?.Invoke(req.Method, JsonConvert.DeserializeObject(req.ParamsJson));
-                        HandleNotificationRaw?.Invoke(req.Method, req.ParamsJson);
+                        HandleNotification?.Invoke(this, req.Method, JsonConvert.DeserializeObject(req.ParamsJson));
+                        HandleNotificationRaw?.Invoke(this, req.Method, req.ParamsJson);
                     }
                 }
                 else
                 {
-                    await ReplyError(new Error
+                    await ReplyError(resp.Id, new Error
                     {
                         Code = (int) ErrorCode.InvalidRequest,
                         Message = "The JSON object is neither a request nor a response",
@@ -273,6 +285,13 @@ namespace JsonRpc
             // is running on, we are listening for a UDP response.
             while (true)
             {
+                if (_closed)
+                {
+                    Trace.WriteLine("JSON-RPC: Stream closed.");
+                    return null;
+                }
+                
+                
                 if (ct.IsCancellationRequested)
                 {
                     Trace.WriteLine("JSON-RPC: WaitForResponse cancelled.");
@@ -370,9 +389,10 @@ namespace JsonRpc
         /// <summary>
         /// Replies to the peer with an error.
         /// </summary>
+        /// <param name="id">The ID of the request, if any.</param>
         /// <param name="error">The error object to send</param>
         /// <param name="ct">The optional cancellation token.</param>
-        internal async Task ReplyError(Error error,
+        internal async Task ReplyError(ulong? id, Error error,
             CancellationToken ct = default(CancellationToken))
         {
             string json = JsonConvert.SerializeObject(new Response {Error = error},
@@ -398,6 +418,15 @@ namespace JsonRpc
             string json = JsonConvert.SerializeObject(response,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
             await _jsonWriter.WriteRawValueAsync(json, ct);
+        }
+
+        /// <summary>
+        /// Cancels the background task and disposes the stream.
+        /// </summary>
+        public void Dispose()
+        {
+            _cancelSource.Cancel();
+            _backgroundTask.Wait();
         }
     }
 }
