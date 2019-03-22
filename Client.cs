@@ -160,77 +160,149 @@ namespace JsonRpc
             }
         }
 
-        private string ReadRecursive(Stack<JsonToken> endOn)
+        private string ParseValue()
         {
             var json = "";
-            
+
             foreach (var tp in ReadTokens())
             {
                 var tokenType = tp.Item1;
                 var val = tp.Item2;
-                if (endOn.Contains(tokenType))
-                {
-                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
-                    break;
-                }
-
                 switch (tokenType)
                 {
-                    case JsonToken.StartObject:
-                        endOn.Push(JsonToken.EndObject);
-                        json += '{' + ReadRecursive(endOn);
-                        endOn.Pop();
-                        break;
-                    case JsonToken.EndObject:
-                        json += '}';
-                        break;
-                    case JsonToken.StartArray:
-                        endOn.Push(JsonToken.EndArray);
-                        json += '[' + ReadRecursive(endOn) + ',';
-                        endOn.Pop();
-                        break;
-                    case JsonToken.EndArray:
-                        json += ']';
-                        break;
-                    case JsonToken.PropertyName:
-                        endOn.Push(JsonToken.PropertyName);
-                        json += $"\"{val}\": {ReadRecursive(endOn)},";
-                        endOn.Pop();
-                        break;
                     case JsonToken.String:
+                        json += $"\"{val}\"";
+                        break;
+                    case JsonToken.Date:
                         json += $"\"{val}\"";
                         break;
                     case JsonToken.Integer:
                         json += $"{val}";
                         break;
-                    case JsonToken.Boolean:
-                        json += $"{val}";
-                        break;
-                    case JsonToken.Date:
-                        json += $"\"{val}\"";
-                        break;
-                    case JsonToken.Null:
-                    case JsonToken.None:
-                        json += "null";
-                        break;
                     case JsonToken.Float:
                         json += $"{val}";
                         break;
-                    case JsonToken.Comment:
-                        break;
-                    case JsonToken.Raw:
+                    case JsonToken.Boolean:
                         json += $"{val}";
                         break;
-                    case JsonToken.StartConstructor:
+                    case JsonToken.Null:
+                        json += "null";
                         break;
-                    case JsonToken.Undefined:
+                    case JsonToken.StartObject:
+                        json += ParseObject();
                         break;
-                    case JsonToken.EndConstructor:
+                    case JsonToken.StartArray:
+                        json += ParseArray();
                         break;
-                    case JsonToken.Bytes:
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
+                }
+                break;
+            }
+
+            return json;
+        }
+
+        private string ParseArray()
+        {
+            var json = "";
+            bool empty = true;
+
+            foreach (var tp in ReadTokens())
+            {
+                var tokenType = tp.Item1;
+                var val = tp.Item2;
+                if (tokenType == JsonToken.StartArray)
+                    json += '[';
+                else if (tokenType == JsonToken.EndArray)
+                {
+                    json += ']';
+                    break;
+                }
+                else
+                {
+                    if (!empty)
+                        json += ',';
+                    json += ParseValue();
+                    empty = false;
+                }
+            }
+            
+            return json;
+        }
+
+        private string ParsePropertyList()
+        {
+            var json = "";
+            bool lastWasProp = true;
+            foreach (var tp in ReadTokens())
+            {
+                var tokenType = tp.Item1;
+                var val = tp.Item2;
+
+                if (tokenType == JsonToken.PropertyName)
+                {
+                    if (!lastWasProp)
+                        json += ",";
+                    json += $"\"{val}\":";
+                    lastWasProp = true;
+                }
+                else if (tokenType == JsonToken.String)
+                {
+                    lastWasProp = false;
+                    json += $"\"{val}\"";
+                }
+                else if (tokenType == JsonToken.Integer)
+                {
+                    lastWasProp = false;
+                    json += $"{val}";
+                }
+                else if (tokenType == JsonToken.Float)
+                {
+                    lastWasProp = false;
+                    json += $"{val}";
+                }
+                else if (tokenType == JsonToken.Null)
+                {
+                    lastWasProp = false;
+                    json += $"{val}";
+                }
+                else if (tokenType == JsonToken.StartObject)
+                {
+                    lastWasProp = false;
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    json += ParseObject();
+                }
+                else if (tokenType == JsonToken.StartArray)
+                {
+                    lastWasProp = false;
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    json += ParseArray();
+                }
+                else
+                {
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    break;
+                }
+            }
+
+            return json;
+        }
+
+        private string ParseObject()
+        {
+            var json = "";
+            foreach (var tp in ReadTokens())
+            {
+                var token = tp.Item1;
+
+                if (token == JsonToken.StartObject)
+                {
+                    json += '{';
+                    json += ParsePropertyList();
+                }
+                else if (token == JsonToken.EndObject)
+                {
+                    json += '}';
+                    break;
                 }
             }
 
@@ -248,9 +320,7 @@ namespace JsonRpc
                 {
                     // json = await _jsonReader.ReadAsStringAsync(_cancelSource.Token);
                     // TODO: read arrays for batched commands
-                    json = ReadRecursive(new Stack<JsonToken>(new[] {JsonToken.EndObject}));
-                    _tokens.Dequeue();
-                    json += '}';
+                    json = ParseObject();
                 }
                 catch (EndOfStreamException)
                 {
@@ -430,6 +500,8 @@ namespace JsonRpc
         public async Task<Response> CallAsync<T>(string method, T @params,
             CancellationToken ct = default (CancellationToken))
         {
+            if (_backgroundTask == null)
+                throw new InvalidOperationException($"Client must be listening for responses");
             var request = new Request<T>
             {
                 Id = NextUid,
@@ -440,6 +512,7 @@ namespace JsonRpc
             string json = JsonConvert.SerializeObject(request,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
             
+            Console.WriteLine($"sending {json} to remote");
             await _jsonWriter.WriteRawAsync(json, ct);
             await _jsonWriter.FlushAsync(ct);
             
@@ -478,6 +551,7 @@ namespace JsonRpc
             string json = JsonConvert.SerializeObject(request,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
 
+            Console.WriteLine($"sending {json} to remote");
             await _jsonWriter.WriteRawValueAsync(json, ct);
             await _jsonWriter.FlushAsync(ct);
         }
