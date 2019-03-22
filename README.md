@@ -1,7 +1,7 @@
 ﻿libjsonrpc-sharp
 ================
 
-This library allows you to send and receive JSON-RPC commands over any kind of connection that can be wrapped in a Stream.
+This library allows you to send and receive JSON-RPC. Using [Stream](https://docs.microsoft.com/en-us/dotnet/api/system.io.stream?view=netframework-4.7.2)s makes the implementation agnostic to the type of channel used to send data. 
 It is based on the [JSON-RPC 2.0 spec](http://www.jsonrpc.org/specification).
 
 ## Authors
