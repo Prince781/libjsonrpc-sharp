@@ -3,8 +3,10 @@
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
     <Company />
     <Authors>Princeton Ferro</Authors>
-    <Description>C# library for JSON RPC over UDP. Based on JSON-RPC 2.0</Description>
-    <PackageTags>json, rpc</PackageTags>
+    <Description>Extremely light-weight, general-purpose, intuitive implementation of JSON-RPC.
+
+This library allows you to send and receive JSON-RPC. Using Streams makes the implementation agnostic to the type of channel used to send data. It is based on the JSON-RPC 2.0 spec.</Description>
+    <PackageTags>json, rpc, json-rpc</PackageTags>
     <RepositoryUrl>https://github.com/Prince781/libjsonrpc-sharp</RepositoryUrl>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -15,8 +17,10 @@
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
     <FileVersion>2.0.0.0</FileVersion>
     <Version>2.0.0-alpha1</Version>
-    <PackageReleaseNotes>
-    </PackageReleaseNotes>
+    <PackageReleaseNotes>Complete rewrite.</PackageReleaseNotes>
+    <PackageProjectUrl>https://github.com/Prince781/libjsonrpc-sharp</PackageProjectUrl>
+    <PackageLicenseUrl>https://github.com/Prince781/libjsonrpc-sharp/blob/master/LICENSE.md</PackageLicenseUrl>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <DocumentationFile>bin\Debug\libjsonrpc-sharp.xml</DocumentationFile>
