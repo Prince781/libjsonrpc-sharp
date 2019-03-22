@@ -5,9 +5,12 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Text;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 
 namespace JsonRpc
@@ -27,13 +30,15 @@ namespace JsonRpc
         /// <summary>
         /// Handles a notification from the peer.
         /// </summary>
+        /// <param name="client">The client for this notification.</param>
         /// <param name="method">The name of the method, like "textDocument/open"</param>
         /// <param name="params">The parameters of the method.</param>
-        public delegate void NotificationHandler(Client Client, string method, object @params);
+        public delegate void NotificationHandler(Client client, string method, object @params);
 
         /// <summary>
         /// Handles a notification from the peer.
         /// </summary>
+        /// <param name="client">The client for this notification.</param>
         /// <param name="method">The name of the method.</param>
         /// <param name="paramsJson">The raw JSON of the parameters.</param>
         internal delegate void NotificationHandlerRaw(Client client, string method, string paramsJson);
@@ -41,6 +46,7 @@ namespace JsonRpc
         /// <summary>
         /// Handles a method call from the peer.
         /// </summary>
+        /// <param name="client">The client for this RPC.</param>
         /// <param name="method">The name of the method, like "textDocument/open"</param>
         /// <param name="id">The ID of the request object.</param>
         /// <param name="params">The parameters of the method call.</param>
@@ -49,6 +55,7 @@ namespace JsonRpc
         /// <summary>
         /// Handles a method call from the peer.
         /// </summary>
+        /// <param name="client">The client for this RPC.</param>
         /// <param name="method">The name of the method, like "textDocument/open"</param>
         /// <param name="id">The ID of the request object.</param>
         /// <param name="paramsJson">The raw JSON of the params object.</param>
@@ -102,6 +109,7 @@ namespace JsonRpc
 
         private readonly JsonTextReader _jsonReader;
         private readonly JsonTextWriter _jsonWriter;
+        private readonly Queue<Tuple<JsonToken, object>> _tokens;
 
         private bool _closed;
 
@@ -118,8 +126,9 @@ namespace JsonRpc
             Stream = stream;
             _responses = new ConcurrentDictionary<ulong, Response>();
             _requests = new ConcurrentDictionary<ulong, Request>();
-            _jsonReader = new JsonTextReader(new StreamReader(Stream));
+            _jsonReader = new JsonTextReader(new StreamReader(Stream)) { SupportMultipleContent = true };
             _jsonWriter = new JsonTextWriter(new StreamWriter(Stream));
+            _tokens = new Queue<Tuple<JsonToken,object>>();
             Timeout = timeout;
         }
 
@@ -138,6 +147,96 @@ namespace JsonRpc
             _backgroundTask = task.Unwrap();
         }
 
+        private IEnumerable<Tuple<JsonToken, object>> ReadTokens()
+        {
+            while (true)
+            {
+                if (_tokens.Count > 0)
+                    yield return _tokens.Dequeue();
+                else if (_jsonReader.Read())
+                    yield return new Tuple<JsonToken, object>(_jsonReader.TokenType, _jsonReader.Value);
+                else
+                    break;
+            }
+        }
+
+        private string ReadRecursive(Stack<JsonToken> endOn)
+        {
+            var json = "";
+            
+            foreach (var tp in ReadTokens())
+            {
+                var tokenType = tp.Item1;
+                var val = tp.Item2;
+                if (endOn.Contains(tokenType))
+                {
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    break;
+                }
+
+                switch (tokenType)
+                {
+                    case JsonToken.StartObject:
+                        endOn.Push(JsonToken.EndObject);
+                        json += '{' + ReadRecursive(endOn);
+                        endOn.Pop();
+                        break;
+                    case JsonToken.EndObject:
+                        json += '}';
+                        break;
+                    case JsonToken.StartArray:
+                        endOn.Push(JsonToken.EndArray);
+                        json += '[' + ReadRecursive(endOn) + ',';
+                        endOn.Pop();
+                        break;
+                    case JsonToken.EndArray:
+                        json += ']';
+                        break;
+                    case JsonToken.PropertyName:
+                        endOn.Push(JsonToken.PropertyName);
+                        json += $"\"{val}\": {ReadRecursive(endOn)},";
+                        endOn.Pop();
+                        break;
+                    case JsonToken.String:
+                        json += $"\"{val}\"";
+                        break;
+                    case JsonToken.Integer:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.Boolean:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.Date:
+                        json += $"\"{val}\"";
+                        break;
+                    case JsonToken.Null:
+                    case JsonToken.None:
+                        json += "null";
+                        break;
+                    case JsonToken.Float:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.Comment:
+                        break;
+                    case JsonToken.Raw:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.StartConstructor:
+                        break;
+                    case JsonToken.Undefined:
+                        break;
+                    case JsonToken.EndConstructor:
+                        break;
+                    case JsonToken.Bytes:
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+
+            return json;
+        }
+
         private async Task Listen()
         {
             while (!_cancelSource.IsCancellationRequested && !_closed)
@@ -147,11 +246,19 @@ namespace JsonRpc
 
                 try
                 {
-                    json = await _jsonReader.ReadAsStringAsync(_cancelSource.Token);
+                    // json = await _jsonReader.ReadAsStringAsync(_cancelSource.Token);
+                    // TODO: read arrays for batched commands
+                    json = ReadRecursive(new Stack<JsonToken>(new[] {JsonToken.EndObject}));
+                    _tokens.Dequeue();
+                    json += '}';
                 }
                 catch (EndOfStreamException)
                 {
                     _closed = true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"exception in client: {ex}");
                 }
 
                 if (json == null)
@@ -214,7 +321,7 @@ namespace JsonRpc
 
         /// <summary>
         /// Closes all connections.
-        /// </summary>
+        /// </summary>GetGetGet
         /// <param name="ct">The optional token to cancel this close operation.</param>
         public void Close(CancellationToken? ct = null)
         {
@@ -333,7 +440,8 @@ namespace JsonRpc
             string json = JsonConvert.SerializeObject(request,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
             
-            await _jsonWriter.WriteRawValueAsync(json, ct);
+            await _jsonWriter.WriteRawAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
             
             return await WaitForResponse((ulong) request.Id, ct);
         }
@@ -371,6 +479,7 @@ namespace JsonRpc
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
 
             await _jsonWriter.WriteRawValueAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
         }
 
         /// <summary>
@@ -397,7 +506,8 @@ namespace JsonRpc
         {
             string json = JsonConvert.SerializeObject(new Response {Error = error},
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
-            await _jsonWriter.WriteRawValueAsync(json, ct);
+            await _jsonWriter.WriteRawAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
         }
 
         /// <summary>
@@ -406,6 +516,7 @@ namespace JsonRpc
         /// </summary>
         /// <param name="id">The ID of the command received.</param>
         /// <param name="obj">The result of executing the command.</param>
+        /// <param name="ct">The optional cancellation token.</param>
         /// <typeparam name="T">The type of the result.</typeparam>
         public async Task ReplyAsync<T>(ulong id, T obj,
             CancellationToken ct = default (CancellationToken))
@@ -417,7 +528,8 @@ namespace JsonRpc
             };
             string json = JsonConvert.SerializeObject(response,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
-            await _jsonWriter.WriteRawValueAsync(json, ct);
+            await _jsonWriter.WriteRawAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
         }
 
         /// <summary>
