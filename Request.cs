@@ -97,9 +97,11 @@ namespace JsonRpc
             if (req.Id != null)
                 o.Add("id", (ulong) req.Id);
             if (value is Request<object> typedRequest)
-                o.Add("params", JToken.FromObject(typedRequest.Params)); // serialization occurs here
+            {
+                o.Add("params", typedRequest.Params == null ? null : JToken.FromObject(typedRequest.Params));
+            } 
             else
-                o.Add("params", JToken.Parse(req.ParamsJson));
+                o.Add("params", req.ParamsJson == null ? null : JToken.Parse(req.ParamsJson));
             
             o.WriteTo(writer);
         }
