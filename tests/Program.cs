@@ -24,14 +24,16 @@ namespace tests
             };           
         }
         
-        private void Typed1(Server server, Client client, string method, ulong? id, int i)
+        private async void Typed1(Server server, Client client, string method, ulong? id, int i)
         {
-            Console.WriteLine($"Client called test.typed1 with param {i}");
+            Console.WriteLine($"SERVER: Received call {method}({i})");
+            await client.ReplyAsync((ulong) id, 3);
         }
 
-        private void Hello(Server server, Client client, string method, ulong? id, object @params)
+        private async void Hello(Server server, Client client, string method, ulong? id, object @params)
         {
-            Console.WriteLine($"Client called test.hello with params {@params}");
+            Console.WriteLine($"SERVER: Received call {method}({@params})");
+            await client.ReplyAsync((ulong) id, "response from server");
         }              
     }
     
@@ -218,8 +220,9 @@ namespace tests
                     // var stream = tcpClient.GetStream();
                     // var data = Encoding.ASCII.GetBytes("\"{}\"");
                     // stream.Write(data, 0, data.Length);
-                    var client = new Client(tcpClient.GetStream());
-                    await client.NotifyAsync("notfound");
+                    var client = new Client(tcpClient.GetStream(), 10000);
+                    client.StartListening();
+                    await client.NotifyAsync("notfound", "hi");
                     await client.CallAsync("test.hello", new { custom = "hello" });
                     await client.CallAsync("test.typed1", 3);
                 
