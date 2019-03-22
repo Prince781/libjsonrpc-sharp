@@ -66,8 +66,26 @@ namespace JsonRpc
                         $" when error code is either {ErrorCode.InvalidRequest} or {ErrorCode.ParseError}");
             }
         }
+        
+        internal Response() {}
+
+        /// <summary>
+        /// Converts to a typed response object.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        public Response<T> AsTyped<T>()
+        {
+            return new Response<T>
+            {
+                Jsonrpc = Jsonrpc,
+                Id = Id,
+                Error = Error,
+                ResultJson = ResultJson
+            };
+        }
     }
-    
+
     /// <summary>
     /// A response is sent from Server to Client after a request is made.
     /// </summary>
@@ -85,14 +103,14 @@ namespace JsonRpc
 
         /// <summary>
         /// The value of this member is determined by the method invoked on
-        /// the Server. This paremeter is lazy: deserialization occurs only when
+        /// the Server. This parameter is lazy: deserialization occurs only when
         /// this parameter is accessed on the first time.
         /// </summary>
         public T Result
         {
             get
             {
-                if (_haveDeserialized || ResultJson == null) 
+                if (_haveDeserialized || ResultJson == null)
                     return _deserialized;
                 _deserialized = JsonConvert.DeserializeObject<T>(ResultJson);
                 _haveDeserialized = true;
@@ -103,8 +121,11 @@ namespace JsonRpc
             {
                 _haveDeserialized = true;
                 _deserialized = value;
+                ResultJson = JsonConvert.SerializeObject(value);
             }
         }
+
+        internal Response() {}
     }
 
     public class ResponseJsonConverter : JsonConverter
@@ -125,9 +146,9 @@ namespace JsonRpc
             if (resp.Id != null)
                 o.Add("id", (ulong) resp.Id);
             if (value is Response<object> typedResponse)
-                o.Add("result", JToken.FromObject(typedResponse.Result));    // serialization occurs here
+                o.Add("result", typedResponse.Result == null ? null : JToken.FromObject(typedResponse.Result));    // serialization occurs here
             else
-                o.Add("result", JToken.Parse(resp.ResultJson));
+                o.Add("result", resp.ResultJson == null ? null : JToken.Parse(resp.ResultJson));
             
             o.WriteTo(writer);
         }

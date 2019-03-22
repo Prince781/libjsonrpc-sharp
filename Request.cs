@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -75,8 +76,11 @@ namespace JsonRpc
             {
                 _haveDeserialized = true;
                 _deserialized = value;
+                ParamsJson = JsonConvert.SerializeObject(value);
             }
         }
+        
+        internal Request() {}
     }
     
     public class RequestJsonConverter : JsonConverter
@@ -98,11 +102,15 @@ namespace JsonRpc
                 o.Add("id", (ulong) req.Id);
             if (value is Request<object> typedRequest)
             {
+                Console.WriteLine("serializing typed request");
                 o.Add("params", typedRequest.Params == null ? null : JToken.FromObject(typedRequest.Params));
-            } 
+            }
             else
+            {
+                Console.WriteLine("serializing untyped request");
                 o.Add("params", req.ParamsJson == null ? null : JToken.Parse(req.ParamsJson));
-            
+            }
+
             o.WriteTo(writer);
         }
 
