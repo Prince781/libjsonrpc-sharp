@@ -44,7 +44,7 @@ namespace JsonRpc
     /// <summary>
     /// When a rpc call encounters an error.
     /// </summary>
-    public class Error : RpcObject
+    public class Error
     {
         /// <summary>
         /// Defined by JSON-RPC 2.0.

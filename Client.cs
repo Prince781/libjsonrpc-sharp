@@ -1,14 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using System.Net.Sockets;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
-using System.Net;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Serialization;
 
 namespace JsonRpc
 {
@@ -19,45 +22,57 @@ namespace JsonRpc
     /// <param name="error">The error.</param>
     public delegate void ErrorHandler(Error error);
 
-    // TODO: make this disposable
     /// <summary>
     /// A client sends requests and receives responses.
     /// </summary>
-    public class Client
+    public class Client : IDisposable
     {
-        private UdpClient m_udp;
-        private IPEndPoint m_remoteEP;
-
         /// <summary>
-        /// The remote server.
+        /// Handles a notification from the peer.
         /// </summary>
-        public string Remote => m_remoteEP.ToString();
-
-        private ulong uid = 0;
-
-        private ulong NextUID => ++uid;
-
-        private ConcurrentDictionary<ulong, Response> m_responses;
-        private Task m_backgroundTask;
-        private CancellationTokenSource m_cancelTokenSource;
-        private CancellationToken m_cancelToken;
+        /// <param name="client">The client for this notification.</param>
+        /// <param name="method">The name of the method, like "textDocument/open"</param>
+        /// <param name="params">The parameters of the method.</param>
+        public delegate void NotificationHandler(Client client, string method, object @params);
 
         /// <summary>
-        /// The port where this client is listening for responses.
+        /// Handles a notification from the peer.
         /// </summary>
-        public int Port { get; }
-
-        private Uri m_remoteUri;
+        /// <param name="client">The client for this notification.</param>
+        /// <param name="method">The name of the method.</param>
+        /// <param name="paramsJson">The raw JSON of the parameters.</param>
+        internal delegate void NotificationHandlerRaw(Client client, string method, string paramsJson);
 
         /// <summary>
-        /// The receive timeout in milliseconds.
+        /// Handles a method call from the peer.
+        /// </summary>
+        /// <param name="client">The client for this RPC.</param>
+        /// <param name="method">The name of the method, like "textDocument/open"</param>
+        /// <param name="id">The ID of the request object.</param>
+        /// <param name="params">The parameters of the method call.</param>
+        public delegate void CallHandler(Client client, string method, ulong id, object @params);
+
+        /// <summary>
+        /// Handles a method call from the peer.
+        /// </summary>
+        /// <param name="client">The client for this RPC.</param>
+        /// <param name="method">The name of the method, like "textDocument/open"</param>
+        /// <param name="id">The ID of the request object.</param>
+        /// <param name="paramsJson">The raw JSON of the params object.</param>
+        internal delegate void CallHandlerRaw(Client client, string method, ulong id, string paramsJson);
+        
+        private ulong _uid = 0;
+        private ulong NextUid => ++_uid;
+
+        private readonly ConcurrentDictionary<ulong, Response> _responses;
+        private readonly ConcurrentDictionary<ulong, Request> _requests;
+        private Task _backgroundTask;
+        private CancellationTokenSource _cancelSource;
+
+        /// <summary>
+        /// The timeout in milliseconds.
         /// </summary>
         public int Timeout { get; }
-
-        /// <summary>
-        /// Whether the background thread is currently running.
-        /// </summary>
-        public bool IsProcessing { get; private set; }
 
         /// <summary>
         /// This event will occur when the server responds with
@@ -66,172 +81,413 @@ namespace JsonRpc
         public event ErrorHandler GotErrorResponse;
 
         /// <summary>
+        /// Will get invoked when receiving a RPC from the peer.
+        /// </summary>
+        public event CallHandler HandleCall;
+
+        /// <summary>
+        /// Will get invoked when receiving a RPC from the peer.
+        /// The parameters object will not be serialized.
+        /// </summary>
+        internal event CallHandlerRaw HandleCallRaw;
+
+        /// <summary>
+        /// Will get invoked when receiving a notification from the peer.
+        /// </summary>
+        public event NotificationHandler HandleNotification;
+
+        /// <summary>
+        /// Will get invoked when receiving a notification from the peer.
+        /// The parameters object will not be serialized.
+        /// </summary>
+        internal event NotificationHandlerRaw HandleNotificationRaw;
+        
+        /// <summary>
+        /// The stream this client communicates on.
+        /// </summary>
+        public Stream Stream { get; }
+
+        private readonly JsonTextReader _jsonReader;
+        private readonly JsonTextWriter _jsonWriter;
+        private readonly Queue<Tuple<JsonToken, object>> _tokens;
+
+        private bool _closed;
+
+        /// <summary>
         /// Creates a new client.
         /// </summary>
-        /// <param name="remote">The remote server to send commands to.</param>
-        /// <param name="port">The port to send commands from.</param>
-        /// <param name="timeout">The timeout in milliseconds.</param>
-        public Client(Uri remote, int port, int timeout)
+        /// <param name="stream">The bidirectional stream to communicate on.</param>
+        /// <param name="timeout">The timeout, in milliseconds.</param>
+        /// <exception cref="ArgumentException">If <paramref name="stream"/> is either read-only or write-only.</exception>
+        public Client(Stream stream, int timeout = 0)
         {
-            m_remoteUri = remote;
-            Port = port;
+            if (!stream.CanRead || !stream.CanWrite)
+                throw new ArgumentException($"{nameof(stream)} must be both readable and writable.");
+            Stream = stream;
+            _responses = new ConcurrentDictionary<ulong, Response>();
+            _requests = new ConcurrentDictionary<ulong, Request>();
+            _jsonReader = new JsonTextReader(new StreamReader(Stream)) { SupportMultipleContent = true };
+            _jsonWriter = new JsonTextWriter(new StreamWriter(Stream));
+            _tokens = new Queue<Tuple<JsonToken,object>>();
             Timeout = timeout;
-
-            m_udp = new UdpClient(Port);
-
-            m_udp.Client.SetSocketOption(
-                SocketOptionLevel.Socket, SocketOptionName.ReceiveTimeout, Timeout);
         }
 
         /// <summary>
-        /// Starts the background task where the client will process further responses.
+        /// Starts listening for incoming messages from the peer.
+        /// Does nothing if already listening.
         /// </summary>
-        public void Start()
+        public void StartListening()
         {
-            if (IsProcessing)
-                throw new Exception($"Task {m_backgroundTask.Id} was already started and is currently processing.");
-
-            m_cancelTokenSource = new CancellationTokenSource();
-            m_cancelToken = m_cancelTokenSource.Token;
-
-            m_responses = new ConcurrentDictionary<ulong, Response>();
-            m_remoteEP = new IPEndPoint(IPAddress.Parse(m_remoteUri.Host), m_remoteUri.Port);
-
-            m_backgroundTask = Task.Factory.StartNew(Run, m_cancelToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        }
-
-        /// <summary>
-        /// Stops the Client from processing responses.
-        /// </summary>
-        public void Stop()
-        {
-            if (m_cancelTokenSource == null)
-                throw new Exception($"{nameof(m_cancelTokenSource)} is null.");
-
-            if (m_cancelToken.IsCancellationRequested)
+            if (_cancelSource != null || _closed)
                 return;
-
-            m_cancelTokenSource.Cancel();
-            m_backgroundTask.Wait();
-
-            m_udp?.Dispose();
-            m_udp = null;
-
-            m_remoteEP = null;
-
-            m_backgroundTask = null;
-            m_cancelToken = default(CancellationToken);
-            m_cancelTokenSource = null;
-
-            IsProcessing = false;
+            _cancelSource = new CancellationTokenSource();
+            // see https://stackoverflow.com/questions/20261300/what-is-correct-way-to-combine-long-running-tasks-with-async-await-pattern
+            var task = Task.Factory.StartNew(Listen, _cancelSource.Token, TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            _backgroundTask = task.Unwrap();
         }
 
-        private void Run()
+        private IEnumerable<Tuple<JsonToken, object>> ReadTokens()
         {
-            IsProcessing = true;
-
-            while (!m_cancelToken.IsCancellationRequested)
+            while (true)
             {
-                byte[] data;
-                Response resp;
+                if (_tokens.Count > 0)
+                    yield return _tokens.Dequeue();
+                else if (_jsonReader.Read())
+                    yield return new Tuple<JsonToken, object>(_jsonReader.TokenType, _jsonReader.Value);
+                else
+                    break;
+            }
+        }
 
-                // step 1: wait synchronously for a response
-                if ((data = GetPacket()) == null)
+        private string ParseValue()
+        {
+            var json = "";
+
+            foreach (var tp in ReadTokens())
+            {
+                var tokenType = tp.Item1;
+                var val = tp.Item2;
+                switch (tokenType)
+                {
+                    case JsonToken.String:
+                        json += $"\"{val}\"";
+                        break;
+                    case JsonToken.Date:
+                        json += $"\"{val}\"";
+                        break;
+                    case JsonToken.Integer:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.Float:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.Boolean:
+                        json += $"{val}";
+                        break;
+                    case JsonToken.Null:
+                        json += "null";
+                        break;
+                    case JsonToken.StartObject:
+                        json += ParseObject();
+                        break;
+                    case JsonToken.StartArray:
+                        json += ParseArray();
+                        break;
+                }
+                break;
+            }
+
+            return json;
+        }
+
+        private string ParseArray()
+        {
+            var json = "";
+            bool empty = true;
+
+            foreach (var tp in ReadTokens())
+            {
+                var tokenType = tp.Item1;
+                var val = tp.Item2;
+                if (tokenType == JsonToken.StartArray)
+                    json += '[';
+                else if (tokenType == JsonToken.EndArray)
+                {
+                    json += ']';
+                    break;
+                }
+                else
+                {
+                    if (!empty)
+                        json += ',';
+                    json += ParseValue();
+                    empty = false;
+                }
+            }
+            
+            return json;
+        }
+
+        private string ParsePropertyList()
+        {
+            var json = "";
+            bool lastWasProp = true;
+            foreach (var tp in ReadTokens())
+            {
+                var tokenType = tp.Item1;
+                var val = tp.Item2;
+
+                if (tokenType == JsonToken.PropertyName)
+                {
+                    if (!lastWasProp)
+                        json += ",";
+                    json += $"\"{val}\":";
+                    lastWasProp = true;
+                }
+                else if (tokenType == JsonToken.String)
+                {
+                    lastWasProp = false;
+                    json += $"\"{val}\"";
+                }
+                else if (tokenType == JsonToken.Integer)
+                {
+                    lastWasProp = false;
+                    json += $"{val}";
+                }
+                else if (tokenType == JsonToken.Float)
+                {
+                    lastWasProp = false;
+                    json += $"{val}";
+                }
+                else if (tokenType == JsonToken.Null)
+                {
+                    lastWasProp = false;
+                    json += $"{val}";
+                }
+                else if (tokenType == JsonToken.StartObject)
+                {
+                    lastWasProp = false;
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    json += ParseObject();
+                }
+                else if (tokenType == JsonToken.StartArray)
+                {
+                    lastWasProp = false;
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    json += ParseArray();
+                }
+                else
+                {
+                    _tokens.Enqueue(new Tuple<JsonToken, object>(tokenType, val));
+                    break;
+                }
+            }
+
+            return json;
+        }
+
+        private string ParseObject()
+        {
+            var json = "";
+            foreach (var tp in ReadTokens())
+            {
+                var token = tp.Item1;
+
+                if (token == JsonToken.StartObject)
+                {
+                    json += '{';
+                    json += ParsePropertyList();
+                }
+                else if (token == JsonToken.EndObject)
+                {
+                    json += '}';
+                    break;
+                }
+            }
+
+            return json;
+        }
+
+        private async Task Listen()
+        {
+            while (!_cancelSource.IsCancellationRequested && !_closed)
+            {
+                // step 1: get the JSON
+                string json = null;
+
+                try
+                {
+                    // json = await _jsonReader.ReadAsStringAsync(_cancelSource.Token);
+                    // TODO: read arrays for batched commands
+                    json = ParseObject();
+                }
+                catch (EndOfStreamException)
+                {
+                    _closed = true;
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"exception in client: {ex}");
+                }
+
+                if (json == null)
                     continue;
 
                 // step 2: parse response
-                if ((resp = ParseResponse(data)) == null)
-                    continue;
-
-                // step 3: add to list of responses
-                if (resp.Id == null)
+                if (ParseResponse(json, out Response resp))
                 {
-                    if (resp.Result == null)
+                    // step 3: add to list of responses
+                    if (resp.Id == null)
                     {
-                        // there was an error
-                        GotErrorResponse?.Invoke(resp.Error);
-                    } else
+                        if (resp.ResultJson == null)
+                        {
+                            // server: there was an error in detecting the ID of the
+                            // request object
+                            GotErrorResponse?.Invoke(resp.Error);
+                        }
+                        else
+                        {
+                            // We should not get a response result without a response ID unless 
+                            // it is an error, according to JSON-RPC 2.0
+                        }
+                    }
+                    else
                     {
-                        // We should not get a response result without a response ID unless 
-                        // it is an error, according to JSON-RPC 2.0
+                        // save it for later
+                        _responses.AddOrUpdate(resp.Id.Value, resp, (key, oldValue) => resp);
+                    }
+                } else if (ParseRequest(json, out Request req))
+                {
+                    // step 3: add to list of requests
+                    // TODO: respond with error if failure 
+                    if (req.Id != null)
+                    {
+                        // we have a method call; save it for later
+                        _requests.AddOrUpdate(req.Id.Value, req, (key, oldValue) => req);
+                        // call handler
+                        HandleCall?.Invoke(this, req.Method, req.Id.Value, JsonConvert.DeserializeObject(req.ParamsJson));
+                        HandleCallRaw?.Invoke(this, req.Method, req.Id.Value, req.ParamsJson);
+                    }
+                    else
+                    {
+                        // we have a notification
+                        // call handler
+                        HandleNotification?.Invoke(this, req.Method, JsonConvert.DeserializeObject(req.ParamsJson));
+                        HandleNotificationRaw?.Invoke(this, req.Method, req.ParamsJson);
                     }
                 }
                 else
                 {
-                    m_responses.AddOrUpdate(resp.Id.Value, resp, (key, oldValue) => resp);
+                    await ReplyError(resp.Id, new Error
+                    {
+                        Code = (int) ErrorCode.InvalidRequest,
+                        Message = "The JSON object is neither a request nor a response",
+                        Data = json
+                    });
                 }
             }
-
-            IsProcessing = false;
         }
 
-        private byte[] GetPacket()
+        /// <summary>
+        /// Closes all connections.
+        /// </summary>GetGetGet
+        /// <param name="ct">The optional token to cancel this close operation.</param>
+        public void Close(CancellationToken? ct = null)
         {
-            byte[] data = null;
-
-            try
-            {
-                data = m_udp.Receive(ref m_remoteEP);
-            } catch (SocketException ex)
-            {
-                if (ex.SocketErrorCode == SocketError.TimedOut)
-                {
-                    // ignore timeouts
-                }
-                else
-                {
-                    Trace.WriteLine($"Encountered exception while attempting to receive data: {ex}");
-                }
-            }
-
-            return data;
+            if (_cancelSource == null) return;
+            _cancelSource.Cancel();
+            _backgroundTask.Wait(ct ?? default(CancellationToken));
+            _cancelSource = null;
         }
 
-        private Response ParseResponse(byte[] data)
+        /// <summary>
+        /// Parses a response object.
+        /// </summary>
+        /// <param name="json">The JSON to format.</param>
+        /// <param name="resp">The response object to set.</param>
+        /// <returns>Whether the parsing was successful.</returns>
+        private bool ParseResponse(string json, out Response resp)
         {
-            Response resp = null;
-            string text = Encoding.UTF8.GetString(data);
-
             try
             {
-                resp = JsonConvert.DeserializeObject<Response>(text);
+                resp = JsonConvert.DeserializeObject<Response>(json);
+                resp.CheckValidity();
+                return true;
             } catch (Exception ex)
             {
-                Trace.WriteLine($"Could not deserialize {text} into a {typeof(Response)}:\n{ex}");
+                if (ex is RpcException)
+                    Trace.WriteLine($"Could not deserialize {json} into a {typeof(Response)}:\n{ex}");
             }
 
-            return resp;
+            resp = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Parses a request object from JSON.
+        /// </summary>
+        /// <param name="json">the raw JSON to parse</param>
+        /// <param name="req">the request object to set</param>
+        /// <returns>Whether the parse was successful</returns>
+        private bool ParseRequest(string json, out Request req)
+        {
+            try
+            {
+                req = JsonConvert.DeserializeObject<Request>(json);
+                req.CheckValidity();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (ex is RpcException)
+                    Trace.WriteLine($"Could not deserialize {json} into a {typeof(Request)}:\n{ex}");
+            }
+
+            req = null;
+            return false;
         }
 
         /// <summary>
         /// Waits for a response to a method call. Times out after <see cref="Timeout"/> milliseconds.
         /// </summary>
-        /// <returns>null if there is a timeout</returns>
-        private async Task<Response> WaitForResponse(Request request)
+        /// <returns>Null if there is a timeout or cancellation</returns>
+        private async Task<Response> WaitForResponse(ulong requestId, 
+            CancellationToken ct)
         {
-            TimeSpan maxdiff = TimeSpan.FromMilliseconds(Timeout);
+            TimeSpan maxdiff = Timeout <= 0 ? TimeSpan.MaxValue : TimeSpan.FromMilliseconds(Timeout);
             DateTime startTime = DateTime.Now;
 
             // On a separate thread from the one this method
             // is running on, we are listening for a UDP response.
-            while (!m_responses.ContainsKey(request.Id.Value))
+            while (true)
             {
-                if ((DateTime.Now - startTime) >= maxdiff)
+                if (_closed)
                 {
-                    Trace.WriteLine($"Timeout after {maxdiff} waiting for response to '{request.Method}()' (Id={request.Id})");
+                    Trace.WriteLine("JSON-RPC: Stream closed.");
+                    return null;
+                }
+                
+                
+                if (ct.IsCancellationRequested)
+                {
+                    Trace.WriteLine("JSON-RPC: WaitForResponse cancelled.");
                     return null;
                 }
 
+                if (DateTime.Now - startTime >= maxdiff)
+                {
+                    Trace.WriteLine($"JSON-RPC: Timeout after {maxdiff} waiting for response to Id={requestId}");
+                    return null;
+                }
+
+                if (_responses.TryRemove(requestId, out Response response))
+                    return response;
+
+
                 // loop until we get something
-                // wait for response listener background thread to get something
-                await Task.Delay(Timeout / 10);
+                await Task.Delay(Math.Max(1, Math.Min(10, Timeout)), ct);
             }
-
-            // we've gotten a response
-
-            Response response;
-            m_responses.TryRemove(request.Id.Value, out response);
-            return response;
         }
 
         /// <summary>
@@ -239,68 +495,122 @@ namespace JsonRpc
         /// </summary>
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
+        /// <param name="ct">The optional cancellation token.</param>
         /// <returns></returns>
-        public async Task<Response> CallAsync(string method, IDictionary<string, object> @params = null)
+        public async Task<Response> CallAsync<T>(string method, T @params,
+            CancellationToken ct = default (CancellationToken))
         {
-            var request = new Request
+            if (_backgroundTask == null)
+                throw new InvalidOperationException($"Client must be listening for responses");
+            var request = new Request<T>
             {
-                Id = NextUID,
+                Id = NextUid,
                 Method = method,
                 Params = @params
             };
 
-            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
-
-            await m_udp.SendAsync(data, data.Length, m_remoteEP);
-            return await WaitForResponse(request);
+            string json = JsonConvert.SerializeObject(request,
+                new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
+            
+            await _jsonWriter.WriteRawAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
+            
+            return await WaitForResponse((ulong) request.Id, ct);
         }
 
         /// <summary>
-        /// Calls a remote method asynchronously.
+        /// Calls a remote method without parameters.
         /// </summary>
         /// <param name="method">The name of the method.</param>
-        /// <param name="params">The object to serialize to a dictionary. This cannot be a primitive type.</param>
+        /// <param name="ct">The optional cancellation token.</param>
         /// <returns></returns>
-        public Task<Response> CallAsync(string method, object @params)
+        public Task<Response> CallAsync(string method, 
+            CancellationToken ct = default (CancellationToken))
         {
-            string serialized = JsonConvert.SerializeObject(@params);
-            var deserialized = JsonConvert.DeserializeObject<IDictionary<string, object>>(serialized);
-
-            return CallAsync(method, deserialized);
+            return CallAsync<object>(method, null, ct);
         }
 
         /// <summary>
-        /// Sends a notification. The server will not respond to a notification unless there
-        /// is an error.
+        /// Sends a notification with parameters. The server will not respond to a
+        /// notification unless there is an error.
         /// </summary>
         /// <param name="method">The name of the method.</param>
         /// <param name="params">The parameters passed to the method.</param>
+        /// <param name="ct">The optional cancellation token.</param>
         /// <returns></returns>
-        public Task<int> NotifyAsync(string method, IDictionary<string, object> @params = null)
+        public async Task NotifyAsync<T>(string method, T @params, 
+            CancellationToken ct = default (CancellationToken))
         {
-            var request = new Request
+            var request = new Request<T>
             {
                 Method = method,
                 Params = @params
             };
 
-            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(request));
-            return m_udp.SendAsync(data, data.Length, m_remoteEP);
+            string json = JsonConvert.SerializeObject(request,
+                new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
+
+            await _jsonWriter.WriteRawValueAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
         }
 
         /// <summary>
-        /// Sends a notification. The server will not respond to a notification unless there
-        /// is an error.
+        /// Sends a notification without parameters. The server will not respond
+        /// to a notification unless there is an error.
         /// </summary>
         /// <param name="method">The name of the method.</param>
-        /// <param name="params">The object to serialize to a dictionary. This cannot be a primitive type.</param>
+        /// <param name="ct">The optional cancellation token.</param>
         /// <returns></returns>
-        public Task<int> NotifyAsync(string method, object @params)
+        public Task NotifyAsync(string method,
+            CancellationToken ct = default (CancellationToken))
         {
-            string serialized = JsonConvert.SerializeObject(@params);
-            var deserialized = JsonConvert.DeserializeObject<IDictionary<string, object>>(serialized);
+            return NotifyAsync<object>(method, null, ct);
+        }
 
-            return NotifyAsync(method, deserialized);
+        /// <summary>
+        /// Replies to the peer with an error.
+        /// </summary>
+        /// <param name="id">The ID of the request, if any.</param>
+        /// <param name="error">The error object to send</param>
+        /// <param name="ct">The optional cancellation token.</param>
+        internal async Task ReplyError(ulong? id, Error error,
+            CancellationToken ct = default(CancellationToken))
+        {
+            string json = JsonConvert.SerializeObject(new Response {Error = error},
+                new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
+            await _jsonWriter.WriteRawAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
+        }
+
+        /// <summary>
+        /// Replies to a method call issued by this client. Use
+        /// this within server methods.
+        /// </summary>
+        /// <param name="id">The ID of the command received.</param>
+        /// <param name="obj">The result of executing the command.</param>
+        /// <param name="ct">The optional cancellation token.</param>
+        /// <typeparam name="T">The type of the result.</typeparam>
+        public async Task ReplyAsync<T>(ulong id, T obj,
+            CancellationToken ct = default (CancellationToken))
+        {
+            var response = new Response<T>
+            {
+                Id = id,
+                Result = obj
+            };
+            string json = JsonConvert.SerializeObject(response,
+                new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
+            await _jsonWriter.WriteRawAsync(json, ct);
+            await _jsonWriter.FlushAsync(ct);
+        }
+
+        /// <summary>
+        /// Cancels the background task and disposes the stream.
+        /// </summary>
+        public void Dispose()
+        {
+            _cancelSource.Cancel();
+            _backgroundTask.Wait();
         }
     }
 }

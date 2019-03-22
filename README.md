@@ -1,12 +1,14 @@
 ﻿libjsonrpc-sharp
 ================
 
-This library allows you to send and receive JSON-RPC commands over **UDP**. [A TCP backend is a todo item.](TODO.md)
+Extremely light-weight, general-purpose, intuitive implementation of JSON-RPC.
+
+This library allows you to send and receive JSON-RPC. Using [Stream](https://docs.microsoft.com/en-us/dotnet/api/system.io.stream?view=netframework-4.7.2)s makes the implementation agnostic to the type of channel used to send data. 
 It is based on the [JSON-RPC 2.0 spec](http://www.jsonrpc.org/specification).
 
 ## Authors
 
-This software was developed internally at [BrightLogic](https://www.brightlogic.com) by Princeton Ferro, who is now the current maintainer. It has been released under the GNU Lesser General Public License version 2.1.
+The original version of this software was developed internally at [BrightLogic](https://www.brightlogic.com) by Princeton Ferro, who is now the current maintainer. It has been released under the GNU Lesser General Public License version 2.1. Since then it has been entirely rewritten with an API similar to [jsonrpc-glib](https://gitlab.gnome.org/GNOME/jsonrpc-glib).
 
 ## Development/Building
 
@@ -21,7 +23,7 @@ $ cd libjsonrpc-sharp
 $ export FrameworkPathOverride=/usr/lib/mono/$API_VERSION_DIR/
 ```
 
-Where `$API_VERSION_DIR` could `4.6.2-api`. Check what's contained in `/usr/lib/mono/`. [See this issue for more information.](https://github.com/dotnet/cli/issues/5977)
+Where `$API_VERSION_DIR` could be `4.7-api`. Check what's contained in `/usr/lib/mono/`. [See this issue for more information.](https://github.com/dotnet/cli/issues/5977)
 
 Finally, do:
 

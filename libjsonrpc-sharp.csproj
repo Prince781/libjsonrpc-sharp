@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
     <Company />
@@ -10,33 +9,33 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
-    <RootNamespace>UdpJson</RootNamespace>
+    <RootNamespace>JsonRpc</RootNamespace>
     <Configurations>Debug;Release</Configurations>
-    <AssemblyVersion>1.1.4.1</AssemblyVersion>
-    <FileVersion>1.1.4.1</FileVersion>
-    <Version>1.1.4.1</Version>
-    <PackageReleaseNotes></PackageReleaseNotes>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <Version>2.0.0-alpha1</Version>
+    <PackageReleaseNotes>
+    </PackageReleaseNotes>
   </PropertyGroup>
-
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <DocumentationFile>bin\Debug\libjsonrpc-sharp.xml</DocumentationFile>
     <GenerateSerializationAssemblies>Auto</GenerateSerializationAssemblies>
   </PropertyGroup>
-
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard2.0|net461|AnyCPU'">
     <OutputPath>bin\Debug\</OutputPath>
     <DocumentationFile>bin\Debug\libjsonrpc-sharp.xml</DocumentationFile>
     <GenerateSerializationAssemblies>Auto</GenerateSerializationAssemblies>
   </PropertyGroup>
-
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|netstandard2.0|net461|AnyCPU'">
     <OutputPath>bin\Release\</OutputPath>
     <DocumentationFile>bin\Release\libjsonrpc-sharp.xml</DocumentationFile>
     <GenerateSerializationAssemblies>Auto</GenerateSerializationAssemblies>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="10.0.1" />
   </ItemGroup>
-
+  <ItemGroup>
+    <Reference Include="System" />
+  </ItemGroup>
 </Project>
