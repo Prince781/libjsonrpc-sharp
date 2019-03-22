@@ -328,7 +328,7 @@ namespace JsonRpc
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"exception in client: {ex}");
+                    Trace.WriteLine($"exception in client: {ex}");
                 }
 
                 if (json == null)
@@ -512,7 +512,6 @@ namespace JsonRpc
             string json = JsonConvert.SerializeObject(request,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
             
-            Console.WriteLine($"sending {json} to remote");
             await _jsonWriter.WriteRawAsync(json, ct);
             await _jsonWriter.FlushAsync(ct);
             
@@ -551,7 +550,6 @@ namespace JsonRpc
             string json = JsonConvert.SerializeObject(request,
                 new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()});
 
-            Console.WriteLine($"sending {json} to remote");
             await _jsonWriter.WriteRawValueAsync(json, ct);
             await _jsonWriter.FlushAsync(ct);
         }

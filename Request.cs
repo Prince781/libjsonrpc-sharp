@@ -101,15 +101,9 @@ namespace JsonRpc
             if (req.Id != null)
                 o.Add("id", (ulong) req.Id);
             if (value is Request<object> typedRequest)
-            {
-                Console.WriteLine("serializing typed request");
                 o.Add("params", typedRequest.Params == null ? null : JToken.FromObject(typedRequest.Params));
-            }
             else
-            {
-                Console.WriteLine("serializing untyped request");
                 o.Add("params", req.ParamsJson == null ? null : JToken.Parse(req.ParamsJson));
-            }
 
             o.WriteTo(writer);
         }
