@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
 using JsonRpc;
 using Newtonsoft.Json;
@@ -19,7 +20,7 @@ namespace tests
             AddHandler<int>("test.typed1", Typed1);
             HandleNotification += (client, method, @params) =>
             {
-                Console.WriteLine($"SERVER: Received notification ${method}(${@params})");
+                Console.WriteLine($"SERVER: Received notification {method}({@params})");
             };           
         }
         
@@ -43,11 +44,11 @@ namespace tests
             Udp
         }
 
-        static TestType? Test;
+        private static TestType? _test;
 
-        private static ushort Port = 12345;
-        
-        static void PrintHelp()
+        private static ushort _port = 12345;
+
+        private static void PrintHelp()
         {
             Console.WriteLine(@"options:
 --help - show help
@@ -106,8 +107,13 @@ namespace tests
                 InputStream.Write(buffer, offset, count);
             }
         }
-        
+
         public static int Main(string[] args)
+        {
+            return AsyncMain(args).Result;
+        }
+        
+        private static async Task<int> AsyncMain(string[] args)
         {
             if (args.Length == 0)
             {
@@ -133,13 +139,13 @@ namespace tests
                         switch (next)
                         {
                             case "tcp":
-                                Test = TestType.Tcp;
+                                _test = TestType.Tcp;
                                 break;
                             case "udp":
-                                Test = TestType.Udp;
+                                _test = TestType.Udp;
                                 break;
                             case "pipe":
-                                Test = TestType.Pipe;
+                                _test = TestType.Pipe;
                                 break;
                             default:
                                 Console.Error.WriteLine($"Unknown test type '{next}'.");
@@ -172,7 +178,7 @@ namespace tests
                             return 1;
                         }
 
-                        Port = port;
+                        _port = port;
 
                         if (after == "")
                             i++;
@@ -194,66 +200,74 @@ namespace tests
                 return 1;
             }
 
-            if (Test == null)
+            switch (_test)
             {
-                Console.Error.WriteLine("Test was not specified.");
-                PrintHelp();
-                return 1;
-            }
-
-            if (Test == TestType.Tcp)
-            {
-                var s = new TcpRpcServer(Port);
-                s.Start();
+                case TestType.Udp:
+                    break;
+                case null:
+                    Console.Error.WriteLine("Test was not specified.");
+                    PrintHelp();
+                    return 1;
+                case TestType.Tcp:
+                {
+                    var s = new TcpRpcServer(_port);
+                    s.Start();
                 
-                var tcpClient = new TcpClient("127.0.0.1", Port);
-                var client = new Client(tcpClient.GetStream());
-                client.NotifyAsync("notfound");
-                client.CallAsync("test.hello", new { custom = "hello" });
-                client.CallAsync("test.typed1", 3);
+                    var tcpClient = new TcpClient("127.0.0.1", _port);
+                    // tcpClient.Client.Send(Encoding.ASCII.GetBytes("\"{}\""));
+                    // var stream = tcpClient.GetStream();
+                    // var data = Encoding.ASCII.GetBytes("\"{}\"");
+                    // stream.Write(data, 0, data.Length);
+                    var client = new Client(tcpClient.GetStream());
+                    await client.NotifyAsync("notfound");
+                    await client.CallAsync("test.hello", new { custom = "hello" });
+                    await client.CallAsync("test.typed1", 3);
                 
-                tcpClient.Close();
-            }
-            else if (Test == TestType.Pipe)
-            {
-                /*
+                    // tcpClient.Close();
+                    break;
+                }
+                case TestType.Pipe:
+                {
+                    /*
                 var testServer = new TestRpcServer();
                 testServer.AcceptStream(new IOStream(Console.OpenStandardInput(), Console.OpenStandardOutput()));
                 */
 
-                while (true)
-                {
-                    JsonTextReader reader = null;
+                    while (true)
+                    {
+                        JsonTextReader reader = null;
                     
-                    try
-                    {
-                        string json = JObject.Load(reader = new JsonTextReader(Console.In)).ToString();
-                        Console.WriteLine($"You entered this JSON: {json}");
-                    }
-                    catch (Exception ex)
-                    {
                         try
                         {
-                            int ch = Console.In.Read();
-                            if (ch == -1)
-                                break;
+                            string json = JObject.Load(reader = new JsonTextReader(Console.In)).ToString();
+                            Console.WriteLine($"You entered this JSON: {json}");
                         }
-                        catch (Exception exc)
+                        catch (Exception ex)
                         {
-                            // ignored
-                            Console.Error.WriteLine($"Failed to read after: {exc}");
-                        }
+                            try
+                            {
+                                int ch = Console.In.Read();
+                                if (ch == -1)
+                                    break;
+                            }
+                            catch (Exception exc)
+                            {
+                                // ignored
+                                Console.Error.WriteLine($"Failed to read after: {exc}");
+                            }
 
-                        Console.Error.WriteLine(ex);
-                    }
+                            Console.Error.WriteLine(ex);
+                        }
                     
-                    if (reader != null)
-                        Console.WriteLine($"token type: {reader.TokenType}");
+                        if (reader != null)
+                            Console.WriteLine($"token type: {reader.TokenType}");
+                    }
+
+                    break;
                 }
-            }
-            else
-            {
-                Console.WriteLine("unsupported");
+                default:
+                    Console.WriteLine("unsupported");
+                    break;
             }
 
             return 0;
